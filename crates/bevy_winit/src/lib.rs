@@ -341,6 +341,7 @@ pub fn winit_runner(mut app: App) {
     let event_handler = move |event: Event<()>,
                               event_loop: &EventLoopWindowTarget<()>,
                               control_flow: &mut ControlFlow| {
+
         #[cfg(feature = "trace")]
         let _span = bevy_utils::tracing::info_span!("winit event_handler").entered();
 
@@ -687,7 +688,7 @@ pub fn winit_runner(mut app: App) {
             event::Event::MainEventsCleared => {
                 let (winit_config, window_focused_query) = focused_window_state.get(&app.world);
 
-                let update = if winit_state.active {
+                let mut update = if winit_state.active {
                     // True if _any_ windows are currently being focused
                     let app_focused = window_focused_query.iter().any(|window| window.focused);
                     match winit_config.update_mode(app_focused) {
@@ -701,6 +702,43 @@ pub fn winit_runner(mut app: App) {
                 } else {
                     false
                 };
+
+                #[cfg(target_arch = "wasm32")]
+                {
+                    use crate::web_resize::WINIT_CANVAS_SELECTOR;
+                    use wasm_bindgen::JsCast;
+                    use web_sys::window;
+
+                    fn has_gl_context(window: &Window) -> bool {
+                        let closure = || -> Option<bool> {
+                            let selector = if let Some(selector) = &window.canvas {
+                                selector
+                            } else {
+                                WINIT_CANVAS_SELECTOR
+                            };
+
+                            let window = web_sys::window()?;
+                            let document = window.document()?;
+                            let canvas = document.query_selector(selector).ok()??;
+                            let canvas = canvas.dyn_into::<web_sys::HtmlCanvasElement>().ok()?;
+
+                            let context = canvas.get_context("webgl2").ok()??;
+
+                            let gl_context = context.dyn_into::<web_sys::WebGl2RenderingContext>().ok()?;
+
+                            Some(!gl_context.is_context_lost())
+                        };
+
+                        closure().unwrap_or(false)
+                    }
+
+                    if let Some(window) = window_focused_query.iter().next()
+                    {
+                        if !has_gl_context(&window) {
+                            update = false;
+                        }
+                    }
+                }
 
                 if update && finished_and_setup_done {
                     winit_state.last_update = Instant::now();
