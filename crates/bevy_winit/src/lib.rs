@@ -38,12 +38,7 @@ use bevy_utils::{
     tracing::{trace, warn},
     Instant,
 };
-use bevy_window::{
-    exit_on_all_closed, CursorEntered, CursorLeft, CursorMoved, FileDragAndDrop, Ime,
-    ReceivedCharacter, RequestRedraw, Window, WindowBackendScaleFactorChanged,
-    WindowCloseRequested, WindowCreated, WindowDestroyed, WindowFocused, WindowMoved,
-    WindowResized, WindowScaleFactorChanged, WindowThemeChanged,
-};
+use bevy_window::{exit_on_all_closed, CursorEntered, CursorLeft, CursorMoved, FileDragAndDrop, Ime, ReceivedCharacter, RequestRedraw, Window, WindowBackendScaleFactorChanged, WindowCloseRequested, WindowCreated, WindowDestroyed, WindowFocused, WindowMoved, WindowResized, WindowScaleFactorChanged, WindowThemeChanged, WindowGlContextLost};
 
 #[cfg(target_os = "android")]
 pub use winit::platform::android::activity::AndroidApp;
@@ -310,7 +305,7 @@ pub fn winit_runner(mut app: App) {
 
     trace!("Entering winit event loop");
 
-    let mut focused_window_state: SystemState<(Res<WinitSettings>, Query<&Window>)> =
+    let mut focused_window_state: SystemState<(Res<WinitSettings>, Query<(Entity, &Window)>)> =
         SystemState::from_world(&mut app.world);
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -367,7 +362,7 @@ pub fn winit_runner(mut app: App) {
             event::Event::NewEvents(start) => {
                 let (winit_config, window_focused_query) = focused_window_state.get(&app.world);
 
-                let app_focused = window_focused_query.iter().any(|window| window.focused);
+                let app_focused = window_focused_query.iter().any(|(_, window)| window.focused);
 
                 // Check if either the `WaitUntil` timeout was triggered by winit, or that same
                 // amount of time has elapsed since the last app update. This manual check is needed
@@ -690,7 +685,7 @@ pub fn winit_runner(mut app: App) {
 
                 let mut update = if winit_state.active {
                     // True if _any_ windows are currently being focused
-                    let app_focused = window_focused_query.iter().any(|window| window.focused);
+                    let app_focused = window_focused_query.iter().any(|(_, window)| window.focused);
                     match winit_config.update_mode(app_focused) {
                         UpdateMode::Continuous | UpdateMode::Reactive { .. } => true,
                         UpdateMode::ReactiveLowPower { .. } => {
@@ -707,7 +702,6 @@ pub fn winit_runner(mut app: App) {
                 {
                     use crate::web_resize::WINIT_CANVAS_SELECTOR;
                     use wasm_bindgen::JsCast;
-                    use web_sys::window;
 
                     fn has_gl_context(window: &Window) -> bool {
                         let closure = || -> Option<bool> {
@@ -732,9 +726,10 @@ pub fn winit_runner(mut app: App) {
                         closure().unwrap_or(false)
                     }
 
-                    if let Some(window) = window_focused_query.iter().next()
+                    if let Some((entity, window)) = window_focused_query.iter().next()
                     {
                         if !has_gl_context(&window) {
+                            app.world.send_event(WindowGlContextLost { window: entity });
                             update = false;
                         }
                     }
@@ -751,7 +746,7 @@ pub fn winit_runner(mut app: App) {
                     let (winit_config, window_focused_query) = focused_window_state.get(&app.world);
 
                     // True if _any_ windows are currently being focused
-                    let app_focused = window_focused_query.iter().any(|window| window.focused);
+                    let app_focused = window_focused_query.iter().any(|(_, window)| window.focused);
 
                     let now = Instant::now();
                     use UpdateMode::*;
