@@ -365,7 +365,7 @@ pub fn winit_runner(mut app: App) {
     let mut app_exit_event_reader = ManualEventReader::<AppExit>::default();
     let mut redraw_event_reader = ManualEventReader::<RequestRedraw>::default();
 
-    let mut focused_windows_state: SystemState<(Res<WinitSettings>, Query<&Window>)> =
+    let mut focused_windows_state: SystemState<(Res<WinitSettings>, Query<(Entity, &Window)>)> =
         SystemState::new(&mut app.world);
 
     let mut event_writer_system_state: SystemState<(
@@ -805,8 +805,8 @@ pub fn winit_runner(mut app: App) {
                         }
                     }
                     let (config, windows) = focused_windows_state.get(&app.world);
-                    let focused = windows.iter().any(|window| window.focused);
-                    let should_update = match config.update_mode(focused) {
+                    let focused = windows.iter().any(|(_, window)| window.focused);
+                    let mut should_update = match config.update_mode(focused) {
                         UpdateMode::Continuous | UpdateMode::Reactive { .. } => {
                             // `Reactive`: In order for `event_handler` to have been called, either
                             // we received a window or raw input event, the `wait` elapsed, or a
@@ -821,6 +821,46 @@ pub fn winit_runner(mut app: App) {
                         }
                     };
 
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        use crate::web_resize::WINIT_CANVAS_SELECTOR;
+                        use bevy_window::WindowGlContextLost;
+                        use wasm_bindgen::JsCast;
+
+                        fn has_gl_context(window: &Window) -> bool {
+                            let closure = || -> Option<bool> {
+                                let selector = if let Some(selector) = &window.canvas {
+                                    selector
+                                } else {
+                                    WINIT_CANVAS_SELECTOR
+                                };
+
+                                let window = web_sys::window()?;
+                                let document = window.document()?;
+                                let canvas = document.query_selector(selector).ok()??;
+                                let canvas = canvas.dyn_into::<web_sys::HtmlCanvasElement>().ok()?;
+
+                                let context = canvas.get_context("webgl2").ok()??;
+
+                                let gl_context = context.dyn_into::<web_sys::WebGl2RenderingContext>().ok()?;
+
+                                Some(!gl_context.is_context_lost())
+                            };
+
+                            closure().unwrap_or(false)
+                        }
+
+                        let (_, windows) = focused_windows_state.get(&app.world);
+
+                        if let Some((entity, window)) = windows.iter().next()
+                        {
+                            if !has_gl_context(&window) {
+                                app.world.send_event(WindowGlContextLost { window: entity });
+                                should_update = false;
+                            }
+                        }
+                    }
+
                     if app.plugins_state() == PluginsState::Cleaned && should_update {
                         // reset these on each update
                         runner_state.wait_elapsed = false;
@@ -832,7 +872,7 @@ pub fn winit_runner(mut app: App) {
 
                         // decide when to run the next update
                         let (config, windows) = focused_windows_state.get(&app.world);
-                        let focused = windows.iter().any(|window| window.focused);
+                        let focused = windows.iter().any(|(_, window)| window.focused);
                         match config.update_mode(focused) {
                             UpdateMode::Continuous => *control_flow = ControlFlow::Poll,
                             UpdateMode::Reactive { wait }
