@@ -349,6 +349,11 @@ impl Default for WinitAppRunnerState {
 /// Overriding the app's [runner](bevy_app::App::runner) while using `WinitPlugin` will bypass the
 /// `EventLoop`.
 pub fn winit_runner(mut app: App) {
+    if app.plugins_state() == PluginsState::Ready {
+        app.finish();
+        app.cleanup();
+    }
+
     let mut event_loop = app
         .world
         .remove_non_send_resource::<EventLoop<()>>()

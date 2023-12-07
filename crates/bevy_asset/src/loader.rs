@@ -5,8 +5,8 @@ use crate::{
         Settings,
     },
     path::AssetPath,
-    Asset, AssetLoadError, AssetServer, AssetServerMode, Assets, Handle, UntypedAssetId,
-    UntypedHandle,
+    Asset, AssetLoadError, AssetServer, AssetServerMode, Assets, Handle, LoadedUntypedAsset,
+    UntypedAssetId, UntypedHandle,
 };
 use bevy_ecs::world::World;
 use bevy_utils::{BoxedFuture, CowArc, HashMap, HashSet};
@@ -28,7 +28,7 @@ pub trait AssetLoader: Send + Sync + 'static {
     /// The settings type used by this [`AssetLoader`].
     type Settings: Settings + Default + Serialize + for<'a> Deserialize<'a>;
     /// The type of [error](`std::error::Error`) which could be encountered by this loader.
-    type Error: std::error::Error + Send + Sync + 'static;
+    type Error: Into<Box<dyn std::error::Error + Send + Sync + 'static>>;
     /// Asynchronously loads [`AssetLoader::Asset`] (and any other labeled assets) from the bytes provided by [`Reader`].
     fn load<'a>(
         &'a self,
@@ -90,7 +90,9 @@ where
                 .expect("Loader settings should exist")
                 .downcast_ref::<L::Settings>()
                 .expect("AssetLoader settings should match the loader type");
-            let asset = <L as AssetLoader>::load(self, reader, settings, &mut load_context).await?;
+            let asset = <L as AssetLoader>::load(self, reader, settings, &mut load_context)
+                .await
+                .map_err(|error| error.into())?;
             Ok(load_context.finish(asset, Some(meta)).into())
         })
     }
@@ -351,6 +353,13 @@ impl<'a> LoadContext<'a> {
 
     /// This will add the given `asset` as a "labeled [`Asset`]" with the `label` label.
     ///
+    /// # Warning
+    ///
+    /// This will not assign dependencies to the given `asset`. If adding an asset
+    /// with dependencies generated from calls such as [`LoadContext::load`], use
+    /// [`LoadContext::labeled_asset_scope`] or [`LoadContext::begin_labeled_asset`] to generate a
+    /// new [`LoadContext`] to track the dependencies for the labeled asset.
+    ///
     /// See [`AssetPath`] for more on labeled assets.
     pub fn add_labeled_asset<A: Asset>(&mut self, label: String, asset: A) -> Handle<A> {
         self.labeled_asset_scope(label, |_| asset)
@@ -453,6 +462,21 @@ impl<'a> LoadContext<'a> {
         let path = path.into().to_owned();
         let handle = if self.should_load_dependencies {
             self.asset_server.load(path)
+        } else {
+            self.asset_server.get_or_create_path_handle(path, None)
+        };
+        self.dependencies.insert(handle.id().untyped());
+        handle
+    }
+
+    /// Retrieves a handle for the asset at the given path and adds that path as a dependency of the asset without knowing its type.
+    pub fn load_untyped<'b>(
+        &mut self,
+        path: impl Into<AssetPath<'b>>,
+    ) -> Handle<LoadedUntypedAsset> {
+        let path = path.into().to_owned();
+        let handle = if self.should_load_dependencies {
+            self.asset_server.load_untyped(path)
         } else {
             self.asset_server.get_or_create_path_handle(path, None)
         };

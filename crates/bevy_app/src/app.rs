@@ -190,6 +190,7 @@ impl Default for App {
         app.init_resource::<AppTypeRegistry>();
 
         app.add_plugins(MainSchedulePlugin);
+
         app.add_event::<AppExit>();
 
         #[cfg(feature = "bevy_ci_testing")]
@@ -307,14 +308,6 @@ impl App {
         let mut app = std::mem::replace(self, App::empty());
         if app.building_plugin_depth > 0 {
             panic!("App::run() was called from within Plugin::build(), which is not allowed.");
-        }
-
-        if app.plugins_state() == PluginsState::Ready {
-            // If we're already ready, we finish up now and advance one frame.
-            // This prevents black frames during the launch transition on iOS.
-            app.finish();
-            app.cleanup();
-            app.update();
         }
 
         let runner = std::mem::replace(&mut app.runner, Box::new(run_once));
@@ -986,20 +979,14 @@ impl App {
 }
 
 fn run_once(mut app: App) {
-    let plugins_state = app.plugins_state();
-    if plugins_state != PluginsState::Cleaned {
-        while app.plugins_state() == PluginsState::Adding {
-            #[cfg(not(target_arch = "wasm32"))]
-            bevy_tasks::tick_global_task_pools_on_main_thread();
-        }
-        app.finish();
-        app.cleanup();
+    while app.plugins_state() == PluginsState::Adding {
+        #[cfg(not(target_arch = "wasm32"))]
+        bevy_tasks::tick_global_task_pools_on_main_thread();
     }
+    app.finish();
+    app.cleanup();
 
-    // if plugins where cleaned before the runner start, an update already ran
-    if plugins_state != PluginsState::Cleaned {
-        app.update();
-    }
+    app.update();
 }
 
 /// An event that indicates the [`App`] should exit. This will fully exit the app process at the

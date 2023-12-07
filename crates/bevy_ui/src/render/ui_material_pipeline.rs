@@ -70,7 +70,7 @@ where
                 .init_resource::<ExtractedUiMaterials<M>>()
                 .init_resource::<ExtractedUiMaterialNodes<M>>()
                 .init_resource::<RenderUiMaterials<M>>()
-                .init_resource::<UiMaterialMeta>()
+                .init_resource::<UiMaterialMeta<M>>()
                 .init_resource::<SpecializedRenderPipelines<UiMaterialPipeline<M>>>()
                 .add_systems(
                     ExtractSchedule,
@@ -98,16 +98,18 @@ where
 }
 
 #[derive(Resource)]
-pub struct UiMaterialMeta {
+pub struct UiMaterialMeta<M: UiMaterial> {
     vertices: BufferVec<UiMaterialVertex>,
     view_bind_group: Option<BindGroup>,
+    marker: PhantomData<M>,
 }
 
-impl Default for UiMaterialMeta {
+impl<M: UiMaterial> Default for UiMaterialMeta<M> {
     fn default() -> Self {
         Self {
             vertices: BufferVec::new(BufferUsages::VERTEX),
             view_bind_group: Default::default(),
+            marker: PhantomData,
         }
     }
 }
@@ -261,7 +263,7 @@ pub type DrawUiMaterial<M> = (
 
 pub struct SetMatUiViewBindGroup<M: UiMaterial, const I: usize>(PhantomData<M>);
 impl<P: PhaseItem, M: UiMaterial, const I: usize> RenderCommand<P> for SetMatUiViewBindGroup<M, I> {
-    type Param = SRes<UiMaterialMeta>;
+    type Param = SRes<UiMaterialMeta<M>>;
     type ViewWorldQuery = Read<ViewUniformOffset>;
     type ItemWorldQuery = ();
 
@@ -296,10 +298,9 @@ impl<P: PhaseItem, M: UiMaterial, const I: usize> RenderCommand<P>
         materials: SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
-        let material = materials
-            .into_inner()
-            .get(&material_handle.material)
-            .unwrap();
+        let Some(material) = materials.into_inner().get(&material_handle.material) else {
+            return RenderCommandResult::Failure;
+        };
         pass.set_bind_group(I, &material.bind_group, &[]);
         RenderCommandResult::Success
     }
@@ -307,7 +308,7 @@ impl<P: PhaseItem, M: UiMaterial, const I: usize> RenderCommand<P>
 
 pub struct DrawUiMaterialNode<M>(PhantomData<M>);
 impl<P: PhaseItem, M: UiMaterial> RenderCommand<P> for DrawUiMaterialNode<M> {
-    type Param = SRes<UiMaterialMeta>;
+    type Param = SRes<UiMaterialMeta<M>>;
     type ViewWorldQuery = ();
     type ItemWorldQuery = Read<UiMaterialBatch<M>>;
 
@@ -352,15 +353,18 @@ pub fn extract_ui_material_nodes<M: UiMaterial>(
     materials: Extract<Res<Assets<M>>>,
     ui_stack: Extract<Res<UiStack>>,
     uinode_query: Extract<
-        Query<(
-            Entity,
-            &Node,
-            &Style,
-            &GlobalTransform,
-            &Handle<M>,
-            &ViewVisibility,
-            Option<&CalculatedClip>,
-        )>,
+        Query<
+            (
+                Entity,
+                &Node,
+                &Style,
+                &GlobalTransform,
+                &Handle<M>,
+                &ViewVisibility,
+                Option<&CalculatedClip>,
+            ),
+            Without<BackgroundColor>,
+        >,
     >,
     windows: Extract<Query<&Window, With<PrimaryWindow>>>,
     ui_scale: Extract<Res<UiScale>>,
@@ -396,7 +400,7 @@ pub fn extract_ui_material_nodes<M: UiMaterial>(
                 style.border.right,
                 parent_width,
                 ui_logical_viewport_size,
-            ) / uinode.size().y;
+            ) / uinode.size().x;
             let top =
                 resolve_border_thickness(style.border.top, parent_width, ui_logical_viewport_size)
                     / uinode.size().y;
@@ -429,7 +433,7 @@ pub fn prepare_uimaterial_nodes<M: UiMaterial>(
     mut commands: Commands,
     render_device: Res<RenderDevice>,
     render_queue: Res<RenderQueue>,
-    mut ui_meta: ResMut<UiMaterialMeta>,
+    mut ui_meta: ResMut<UiMaterialMeta<M>>,
     mut extracted_uinodes: ResMut<ExtractedUiMaterialNodes<M>>,
     view_uniforms: Res<ViewUniforms>,
     ui_material_pipeline: Res<UiMaterialPipeline<M>>,
@@ -727,7 +731,9 @@ pub fn queue_ui_material_nodes<M: UiMaterial>(
     let draw_function = draw_functions.read().id::<DrawUiMaterial<M>>();
 
     for (entity, extracted_uinode) in extracted_uinodes.uinodes.iter() {
-        let material = render_materials.get(&extracted_uinode.material).unwrap();
+        let Some(material) = render_materials.get(&extracted_uinode.material) else {
+            continue;
+        };
         for (view, mut transparent_phase) in &mut views {
             let pipeline = pipelines.specialize(
                 &pipeline_cache,
