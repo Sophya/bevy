@@ -683,7 +683,7 @@ pub fn winit_runner(mut app: App) {
             event::Event::MainEventsCleared => {
                 let (winit_config, window_focused_query) = focused_window_state.get(&app.world);
 
-                let mut update = if winit_state.active {
+                let update = if winit_state.active {
                     // True if _any_ windows are currently being focused
                     let app_focused = window_focused_query.iter().any(|(_, window)| window.focused);
                     match winit_config.update_mode(app_focused) {
@@ -730,7 +730,7 @@ pub fn winit_runner(mut app: App) {
                     {
                         if !has_gl_context(&window) {
                             app.world.send_event(WindowGlContextLost { window: entity });
-                            update = false;
+                            app.pause_sub_apps();
                         }
                     }
                 }

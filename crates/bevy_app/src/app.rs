@@ -72,6 +72,7 @@ pub struct App {
     /// This is initially set to [`Main`].
     pub main_schedule_label: BoxedScheduleLabel,
     sub_apps: HashMap<AppLabelId, SubApp>,
+    run_sub_apps: bool,
     plugin_registry: Vec<Box<dyn Plugin>>,
     plugin_name_added: HashSet<String>,
     /// A private counter to prevent incorrect calls to `App::run()` from `Plugin::build()`
@@ -221,6 +222,7 @@ impl App {
             plugin_name_added: Default::default(),
             main_schedule_label: Box::new(Main),
             building_plugin_depth: 0,
+            run_sub_apps: true,
         }
     }
 
@@ -243,13 +245,15 @@ impl App {
             let _bevy_main_update_span = info_span!("main app").entered();
             self.world.run_schedule(&*self.main_schedule_label);
         }
-        for (_label, sub_app) in self.sub_apps.iter_mut() {
-            #[cfg(feature = "trace")]
-            let _sub_app_span = info_span!("sub app", name = ?_label).entered();
-            sub_app.extract(&mut self.world);
-            sub_app.run();
-        }
 
+        if self.run_sub_apps {
+            for (_label, sub_app) in self.sub_apps.iter_mut() {
+                #[cfg(feature = "trace")]
+                    let _sub_app_span = info_span!("sub app", name = ?_label).entered();
+                sub_app.extract(&mut self.world);
+                sub_app.run();
+            }
+        }
         self.world.clear_trackers();
     }
 
@@ -892,6 +896,16 @@ impl App {
     /// Removes a sub app from the app. Returns [`None`] if the label doesn't exist.
     pub fn remove_sub_app(&mut self, label: impl AppLabel) -> Option<SubApp> {
         self.sub_apps.remove(&label.as_label())
+    }
+
+    /// Resumes sub apps
+    pub fn resume_sub_apps(&mut self) {
+        self.run_sub_apps = true;
+    }
+
+    /// Pauses sub apps from running.
+    pub fn pause_sub_apps(&mut self) {
+        self.run_sub_apps = false;
     }
 
     /// Retrieves a `SubApp` inside this [`App`] with the given label, if it exists. Otherwise returns
