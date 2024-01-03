@@ -844,6 +844,7 @@ impl PipelineCache {
         mut events: Extract<EventReader<AssetEvent<Shader>>>,
     ) {
         for event in events.read() {
+            #[allow(clippy::match_same_arms)]
             match event {
                 AssetEvent::Added { id } | AssetEvent::Modified { id } => {
                     if let Some(shader) = shaders.get(*id) {
@@ -851,6 +852,7 @@ impl PipelineCache {
                     }
                 }
                 AssetEvent::Removed { id } => cache.remove_shader(*id),
+                AssetEvent::Unused { .. } => {}
                 AssetEvent::LoadedWithDependencies { .. } => {
                     // TODO: handle this
                 }

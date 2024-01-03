@@ -14,6 +14,7 @@ use wgpu::{
 
 use crate::{
     prelude::{Image, Shader},
+    render_asset::RenderAssetPersistencePolicy,
     render_resource::{
         BindGroup, BindGroupLayout, Buffer, CachedRenderPipelineId, FragmentState, PipelineCache,
         RenderPipelineDescriptor, SpecializedRenderPipeline, SpecializedRenderPipelines, Texture,
@@ -367,6 +368,7 @@ pub(crate) fn collect_screenshots(world: &mut World) {
                     wgpu::TextureDimension::D2,
                     result,
                     texture_format,
+                    RenderAssetPersistencePolicy::Unload,
                 ));
             };
 
