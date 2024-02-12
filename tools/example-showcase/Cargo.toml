@@ -1,6 +1,6 @@
 [package]
 name = "example-showcase"
-version = "0.1.1"
+version = "0.12.2"
 edition = "2021"
 description = "Run examples"
 publish = false
