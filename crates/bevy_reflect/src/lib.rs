@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 //! Reflection in Rust.
 //!
 //! [Reflection] is a powerful tool provided within many programming languages
