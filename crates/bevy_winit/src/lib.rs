@@ -811,7 +811,7 @@ pub fn winit_runner(mut app: App) {
                     }
                     let (config, windows) = focused_windows_state.get(&app.world);
                     let focused = windows.iter().any(|(_, window)| window.focused);
-                    let mut should_update = match config.update_mode(focused) {
+                    let should_update = match config.update_mode(focused) {
                         UpdateMode::Continuous | UpdateMode::Reactive { .. } => {
                             // `Reactive`: In order for `event_handler` to have been called, either
                             // we received a window or raw input event, the `wait` elapsed, or a
@@ -861,7 +861,9 @@ pub fn winit_runner(mut app: App) {
                         {
                             if !has_gl_context(&window) {
                                 app.world.send_event(WindowGlContextLost { window: entity });
-                                should_update = false;
+                                // HEP: pause sub-apps to stop WGPU from crashing when there's no OpenGL context.
+                                // Ensures that the rest of the systems in the main app keep running (i.e. physics).
+                                app.pause_sub_apps();
                             }
                         }
                     }
