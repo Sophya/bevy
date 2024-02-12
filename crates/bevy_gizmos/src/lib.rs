@@ -401,6 +401,10 @@ impl RenderAsset for LineGizmo {
             strip: self.strip,
         })
     }
+
+    fn unload(&mut self) {
+        *self = Self::default();
+    }
 }
 
 #[derive(Resource)]

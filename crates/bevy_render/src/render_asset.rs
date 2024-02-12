@@ -48,6 +48,8 @@ pub trait RenderAsset: Asset + Clone {
         self,
         param: &mut SystemParamItem<Self::Param>,
     ) -> Result<Self::PreparedAsset, PrepareAssetError<Self>>;
+
+    fn unload(&mut self);
 }
 
 bitflags::bitflags! {

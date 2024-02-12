@@ -1099,6 +1099,10 @@ impl RenderAsset for Mesh {
                 .and_then(|mt| images.get(&mt).map(|i| i.texture_view.clone())),
         })
     }
+
+    fn unload(&mut self) {
+        *self = Mesh::new(self.primitive_topology, self.asset_usage & RenderAssetUsages::MAIN_WORLD);
+    }
 }
 
 struct MikktspaceGeometryHelper<'a> {

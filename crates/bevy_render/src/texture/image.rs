@@ -855,6 +855,11 @@ impl RenderAsset for Image {
             mip_level_count: self.texture_descriptor.mip_level_count,
         })
     }
+
+    fn unload(&mut self) {
+        self.data = Vec::new();
+        self.asset_usage &= RenderAssetUsages::MAIN_WORLD;
+    }
 }
 
 bitflags::bitflags! {
