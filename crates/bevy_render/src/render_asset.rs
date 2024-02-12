@@ -333,14 +333,9 @@ fn extract_render_asset<A: RenderAsset>(mut commands: Commands, mut main_world: 
             let mut extracted_assets = Vec::new();
             for id in changed_assets.drain() {
                 if let Some(asset) = assets.get_mut(id) {
-                    let asset_usage = asset.asset_usage();
-                    if asset_usage.contains(RenderAssetUsages::RENDER_WORLD) && !asset.unloaded() {
-                        if asset_usage == RenderAssetUsages::RENDER_WORLD {
-                            extracted_assets.push((id, asset.clone()));
-                            asset.unload();
-                        } else {
-                            extracted_assets.push((id, asset.clone()));
-                        }
+                    if !asset.unloaded() {
+                        extracted_assets.push((id, asset.clone()));
+                        asset.unload();
                     }
                 }
             }
