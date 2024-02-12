@@ -123,6 +123,7 @@ pub struct Mesh {
     morph_targets: Option<Handle<Image>>,
     morph_target_names: Option<Vec<String>>,
     pub asset_usage: RenderAssetUsages,
+    unloaded: bool,
 }
 
 impl Mesh {
@@ -188,6 +189,7 @@ impl Mesh {
             morph_targets: None,
             morph_target_names: None,
             asset_usage,
+            unloaded: false,
         }
     }
 
@@ -1101,7 +1103,12 @@ impl RenderAsset for Mesh {
     }
 
     fn unload(&mut self) {
-        *self = Mesh::new(self.primitive_topology, self.asset_usage & RenderAssetUsages::MAIN_WORLD);
+        *self = Mesh::new(self.primitive_topology, self.asset_usage /* & RenderAssetUsages::MAIN_WORLD */);
+        self.unloaded = true;
+    }
+
+    fn unloaded(&self) -> bool {
+        self.unloaded
     }
 }
 

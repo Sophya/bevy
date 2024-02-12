@@ -111,6 +111,7 @@ pub struct Image {
     pub sampler: ImageSampler,
     pub texture_view_descriptor: Option<TextureViewDescriptor<'static>>,
     pub asset_usage: RenderAssetUsages,
+    pub unloaded: bool,
 }
 
 /// Used in [`Image`], this determines what image sampler to use when rendering. The default setting,
@@ -466,6 +467,7 @@ impl Default for Image {
             sampler: ImageSampler::Default,
             texture_view_descriptor: None,
             asset_usage: RenderAssetUsages::default(),
+            unloaded: false,
         }
     }
 }
@@ -858,7 +860,12 @@ impl RenderAsset for Image {
 
     fn unload(&mut self) {
         self.data = Vec::new();
-        self.asset_usage &= RenderAssetUsages::MAIN_WORLD;
+        // self.asset_usage &= RenderAssetUsages::MAIN_WORLD;
+        self.unloaded = true;
+    }
+
+    fn unloaded(&self) -> bool {
+        self.unloaded
     }
 }
 

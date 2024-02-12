@@ -358,6 +358,7 @@ struct LineGizmo {
     colors: Vec<[f32; 4]>,
     /// Whether this gizmo's topology is a line-strip or line-list
     strip: bool,
+    unloaded: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -404,6 +405,11 @@ impl RenderAsset for LineGizmo {
 
     fn unload(&mut self) {
         *self = Self::default();
+        self.unloaded = true;
+    }
+
+    fn unloaded(&self) -> bool {
+        self.unloaded
     }
 }
 

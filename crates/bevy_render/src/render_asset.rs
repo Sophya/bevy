@@ -50,6 +50,8 @@ pub trait RenderAsset: Asset + Clone {
     ) -> Result<Self::PreparedAsset, PrepareAssetError<Self>>;
 
     fn unload(&mut self);
+
+    fn unloaded(&self) -> bool;
 }
 
 bitflags::bitflags! {
@@ -330,13 +332,12 @@ fn extract_render_asset<A: RenderAsset>(mut commands: Commands, mut main_world: 
 
             let mut extracted_assets = Vec::new();
             for id in changed_assets.drain() {
-                if let Some(asset) = assets.get(id) {
+                if let Some(asset) = assets.get_mut(id) {
                     let asset_usage = asset.asset_usage();
-                    if asset_usage.contains(RenderAssetUsages::RENDER_WORLD) {
+                    if asset_usage.contains(RenderAssetUsages::RENDER_WORLD) && !asset.unloaded() {
                         if asset_usage == RenderAssetUsages::RENDER_WORLD {
-                            if let Some(asset) = assets.remove(id) {
-                                extracted_assets.push((id, asset));
-                            }
+                            extracted_assets.push((id, asset.clone()));
+                            asset.unload();
                         } else {
                             extracted_assets.push((id, asset.clone()));
                         }
