@@ -426,6 +426,7 @@ fn handle_winit_event(
                         || (runner_state.window_event_received && react_to_window_events)
                         || (runner_state.device_event_received && react_to_device_events)
                 }
+                UpdateMode::Manual => runner_state.redraw_requested,
             };
 
             // Ensure that an update is triggered on the first iterations for app initialization
@@ -551,6 +552,7 @@ fn handle_winit_event(
                         }
                     }
                 }
+                UpdateMode::Manual => event_loop.set_control_flow(ControlFlow::Wait),
             }
         }
         Event::NewEvents(cause) => {

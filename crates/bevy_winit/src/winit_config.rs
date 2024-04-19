@@ -92,4 +92,6 @@ pub enum UpdateMode {
         /// Reacts to device events, that will wake up the loop if it's in a wait wtate
         react_to_device_events: bool,
     },
+    /// Only reacts to redraw requested through the [`EventLoopProxy`](crate::EventLoopProxy)
+    Manual,
 }
