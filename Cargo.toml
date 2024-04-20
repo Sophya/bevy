@@ -318,6 +318,12 @@ bytemuck = "1.7"
 futures-lite = "2.0.1"
 crossbeam-channel = "0.5.0"
 argh = "0.1.12"
+wasm-bindgen = { version = "0.2" }
+web-sys = { version = "0.3", features = ["Request", "Window", "Response"] }
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+once_cell = "1.16"
+
 
 [[example]]
 name = "hello_world"

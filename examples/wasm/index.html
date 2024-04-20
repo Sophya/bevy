@@ -27,3 +27,102 @@
     init()
   </script>
 </html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      body {
+        background: linear-gradient(
+          135deg,
+          white 0%,
+          white 49%,
+          black 49%,
+          black 51%,
+          white 51%,
+          white 100%
+        ) repeat;
+        background-size: 20px 20px;
+      }
+      canvas {
+        width: 100%;
+        height: 100%;
+        background-color: white;
+      }
+    </style>
+    <title>WASM Example</title>
+  </head>
+  <body>
+    <button id="redrawButton">Redraw</button>
+  </body>
+  <script type="module">
+    // import init from './target/wasm_example.js'
+    import init, { send_redraw_request } from './target/wasm_example.js'
+
+    // RUN FRAME WHEN CLICKING A BUTTON
+
+    init().catch(err => {
+      if (err.message === "Using exceptions for control flow, don't mind me. This isn't actually an error!") {
+        const button = document.getElementById('redrawButton');
+        button.addEventListener('click', () => {
+          console.log(">> Redraw btn clicked!");
+          try {
+            send_redraw_request();
+          } catch (err) {
+            console.error("Failed to send redraw request:", err);
+          }
+        });
+      } else {
+        console.error("Failed to initialize WASM module:", err);
+      }
+    });
+
+    // PRINT DELTA TIME FROM WEB POV
+
+    document.getElementById('redrawButton').addEventListener('click', (function() {
+      let lastClicked = null;
+
+      return function() {
+        const now = performance.now();
+
+        if (lastClicked === null) {
+          console.log('Time since last click: infinite');
+        } else {
+          //> this and Bevy's delta_time return different things consistently, as if Bevy were applying the same "browser inacuracy" magic constant that we used to have...
+          const secondsPassed = (now - lastClicked) / 1000;
+          console.log(`Time since last click: ${secondsPassed} seconds`);
+        }
+
+        lastClicked = now;
+      };
+    })());
+
+    // GAME LOOP MANAGED BY WEB
+  
+    let lastFrameTime = 0;
+    const fps = 10;
+    const frameDuration = 1000 / fps;
+  
+    function gameLoop(timestamp) {
+
+      //>> this should run at max speed, at screen refresh rate
+      //>> so, maybe we can optimize it further ... which Winit probably is already doing
+      // console.log(">> animation frame received from the browser");
+
+      const elapsed = timestamp - lastFrameTime;
+      if (elapsed > frameDuration) {
+        try {
+          send_redraw_request();
+          lastFrameTime = timestamp - (elapsed % frameDuration);
+          //>> ^^^ this means that, if we miss a frame, we will try max speed until we get it
+          //>> can that be a problem for performance in case an error happens ?
+        } catch (err) { /* missing frame */ }
+      }
+      requestAnimationFrame(gameLoop);
+    }
+  
+    // Start the game loop
+    requestAnimationFrame(gameLoop);
+    console.log(">>!! WEB GAME LOOP STARTED");
+
+  </script>
+</html>
