@@ -509,7 +509,7 @@ fn handle_winit_event(
                     // Not redrawing, but the timeout elapsed.
                     run_app_update_if_should(runner_state, app);
 
-                    // running the app may have changed the WinitSettings resource, so we have to re-extract it
+                    // Running the app may have changed the WinitSettings resource, so we have to re-extract it.
                     let (config, windows) = focused_windows_state.get(&app.world);
                     let focused = windows.iter().any(|(_, window)| window.focused);
                     next_update_mode = config.update_mode(focused);
