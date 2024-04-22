@@ -554,9 +554,9 @@ fn handle_winit_event(
         Event::NewEvents(cause) => {
             runner_state.wait_elapsed = match cause {
                 StartCause::WaitCancelled {
-                    requested_resume: Some(resume),
+                    requested_resume: Some(_),
                     ..
-                } => resume <= Instant::now(),
+                } => false,
                 _ => true,
             };
         }
