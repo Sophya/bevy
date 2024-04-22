@@ -400,7 +400,7 @@ fn handle_winit_event(
 
             let (config, windows) = focused_windows_state.get(&app.world);
             let focused = windows.iter().any(|(_, window)| window.focused);
-            let next_update_mode = config.update_mode(focused);
+            let mut next_update_mode = config.update_mode(focused);
 
             // Trigger next redraw if we're changing the update mode
             if next_update_mode != runner_state.update_mode {
@@ -508,6 +508,11 @@ fn handle_winit_event(
                 } else {
                     // Not redrawing, but the timeout elapsed.
                     run_app_update_if_should(runner_state, app);
+
+                    // running the app may have changed the WinitSettings resource, so we have to re-extract it
+                    let (config, windows) = focused_windows_state.get(&app.world);
+                    let focused = windows.iter().any(|(_, window)| window.focused);
+                    next_update_mode = config.update_mode(focused);
                 }
             }
 
