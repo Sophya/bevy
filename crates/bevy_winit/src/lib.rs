@@ -505,7 +505,7 @@ fn handle_winit_event(
                     for window in winit_windows.windows.values() {
                         window.request_redraw();
                     }
-                } else if runner_state.wait_elapsed {
+                } else {
                     // Not redrawing, but the timeout elapsed.
                     run_app_update_if_should(runner_state, app);
                 }
