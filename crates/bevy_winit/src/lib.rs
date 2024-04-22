@@ -183,8 +183,6 @@ struct WinitAppRunnerState {
     redraw_requested: bool,
     /// Is `true` if enough time has elapsed since `last_update` to run another update.
     wait_elapsed: bool,
-    /// The time the last update started.
-    last_update: Instant,
     /// Number of "forced" updates to trigger on application start
     startup_forced_updates: u32,
 }
@@ -206,7 +204,6 @@ impl Default for WinitAppRunnerState {
             device_event_received: false,
             redraw_requested: false,
             wait_elapsed: false,
-            last_update: Instant::now(),
             // 3 seems to be enough, 5 is a safe margin
             startup_forced_updates: 5,
         }
@@ -422,7 +419,11 @@ fn handle_winit_event(
                         || runner_state.window_event_received
                         || runner_state.device_event_received
                 }
-                UpdateMode::Reactive { react_to_window_events, react_to_device_events, .. } => {
+                UpdateMode::Reactive {
+                    react_to_window_events,
+                    react_to_device_events,
+                    ..
+                } => {
                     runner_state.wait_elapsed
                         || runner_state.redraw_requested
                         || (runner_state.window_event_received && react_to_window_events)
@@ -495,6 +496,8 @@ fn handle_winit_event(
                 }
             }
 
+            let last_update_started = Instant::now();
+
             if should_update {
                 if runner_state.redraw_requested && runner_state.active != ActiveState::Suspended {
                     let (_, winit_windows, _, _) =
@@ -540,15 +543,8 @@ fn handle_winit_event(
                     }
                 }
                 UpdateMode::Reactive { wait, .. } => {
-                    if let Some(next) = runner_state.last_update.checked_add(wait) {
-                        runner_state.last_update = Instant::now();
-
-                        if let ControlFlow::WaitUntil(current) = event_loop.control_flow() {
-                            if runner_state.wait_elapsed && current != next {
-                                event_loop.set_control_flow(ControlFlow::WaitUntil(next));
-                            }
-
-                        } else {
+                    if let Some(next) = last_update_started.checked_add(wait) {
+                        if runner_state.wait_elapsed {
                             event_loop.set_control_flow(ControlFlow::WaitUntil(next));
                         }
                     }
@@ -560,7 +556,7 @@ fn handle_winit_event(
                 StartCause::WaitCancelled {
                     requested_resume: Some(resume),
                     ..
-                } => resume >= Instant::now(),
+                } => resume <= Instant::now(),
                 _ => true,
             };
         }
