@@ -171,8 +171,8 @@ impl AppSendEvent for App {
 /// Persistent state that is used to run the [`App`] according to the current
 /// [`UpdateMode`].
 struct WinitAppRunnerState {
-    /// Current active state of the app.
-    active: ActiveState,
+    /// Current activity state of the app.
+    activity_state: ActivityState,
     /// Current update mode of the app.
     update_mode: UpdateMode,
     /// Is `true` if a new [`WindowEvent`] has been received since the last update.
@@ -197,7 +197,7 @@ impl WinitAppRunnerState {
 impl Default for WinitAppRunnerState {
     fn default() -> Self {
         Self {
-            active: ActiveState::NotYetStarted,
+            activity_state: ActivityState::NotYetStarted,
             update_mode: UpdateMode::Continuous,
             window_event_received: false,
             device_event_received: false,
@@ -210,7 +210,7 @@ impl Default for WinitAppRunnerState {
 }
 
 #[derive(PartialEq, Eq, Debug)]
-enum ActiveState {
+enum ActivityState {
     NotYetStarted,
     Active,
     Suspended,
@@ -218,9 +218,9 @@ enum ActiveState {
     WillResume,
 }
 
-impl ActiveState {
+impl ActivityState {
     #[inline]
-    fn should_run(&self) -> bool {
+    fn is_active(&self) -> bool {
         match self {
             Self::NotYetStarted | Self::Suspended => false,
             Self::Active | Self::WillSuspend | Self::WillResume => true,
@@ -400,33 +400,17 @@ fn handle_winit_event(
             let (config, windows) = focused_windows_state.get(&app.world);
             let focused = windows.iter().any(|(_, window)| window.focused);
             let mut update_mode = config.update_mode(focused);
+            let mut should_update = should_update(runner_state, update_mode);
 
-            let mut should_update = match update_mode {
-                UpdateMode::Continuous => {
-                    runner_state.wait_elapsed
-                        || runner_state.window_event_received
-                        || runner_state.device_event_received
-                }
-                UpdateMode::Reactive {
-                    react_to_window_events,
-                    react_to_device_events,
-                    ..
-                } => {
-                    runner_state.wait_elapsed
-                        || (runner_state.window_event_received && react_to_window_events)
-                        || (runner_state.device_event_received && react_to_device_events)
-                }
-            };
-
-            // Ensure that an update is triggered on the first iterations for app initialization
             if runner_state.startup_forced_updates > 0 {
                 runner_state.startup_forced_updates -= 1;
+                // Ensure that an update is triggered on the first iterations for app initialization
                 should_update = true;
             }
 
-            // Trigger one last update to enter the suspended state
-            if runner_state.active == ActiveState::WillSuspend {
-                runner_state.active = ActiveState::Suspended;
+            if runner_state.activity_state == ActivityState::WillSuspend {
+                runner_state.activity_state = ActivityState::Suspended;
+                // Trigger one last update to enter the suspended state
                 should_update = true;
 
                 #[cfg(target_os = "android")]
@@ -439,10 +423,12 @@ fn handle_winit_event(
                 }
             }
 
-            // Trigger the update to enter the active state
-            if runner_state.active == ActiveState::WillResume {
-                runner_state.active = ActiveState::Active;
+            if runner_state.activity_state == ActivityState::WillResume {
+                runner_state.activity_state = ActivityState::Active;
+                // Trigger the update to enter the active state
                 should_update = true;
+                // Trigger the next redraw ro refresh the screen immediately
+                runner_state.redraw_requested = true;
 
                 #[cfg(target_os = "android")]
                 {
@@ -482,11 +468,13 @@ fn handle_winit_event(
                 }
             }
 
-            let last_update_started = Instant::now();
+            // This is recorded before running app.update(), to run the next cycle after a correct timeout.
+            // If the cycle takes more than the wait timeout, it will be re-executed immediately.
+            let begin_frame_time = Instant::now();
 
-            if should_update && !runner_state.redraw_requested {
+            if should_update {
                 // Not redrawing, but the timeout elapsed.
-                run_app_update_if_should(runner_state, app);
+                run_app_update(runner_state, app);
 
                 // Running the app may have changed the WinitSettings resource, so we have to re-extract it.
                 let (config, windows) = focused_windows_state.get(&app.world);
@@ -523,13 +511,14 @@ fn handle_winit_event(
                         }
                     }
 
-                    // Trigger next redraw to refresh the screen immediately if waiting
+                    // Trigger the next redraw to refresh the screen immediately if waiting
                     if let ControlFlow::Wait = event_loop.control_flow() {
                         runner_state.redraw_requested = true;
                     }
                 }
                 UpdateMode::Reactive { wait, .. } => {
-                    if let Some(next) = last_update_started.checked_add(wait) {
+                    // Set the next timeout, starting from the instant before running app.update() to avoid frame delays
+                    if let Some(next) = begin_frame_time.checked_add(wait) {
                         if runner_state.wait_elapsed {
                             event_loop.set_control_flow(ControlFlow::WaitUntil(next));
                         }
@@ -537,13 +526,15 @@ fn handle_winit_event(
                 }
             }
 
-            // Trigger next redraw if we're changing the update mode
             if update_mode != runner_state.update_mode {
+                // Trigger the next redraw since we're changing the update mode
                 runner_state.redraw_requested = true;
                 runner_state.update_mode = update_mode;
             }
 
-            if runner_state.redraw_requested && runner_state.active != ActiveState::Suspended {
+            if runner_state.redraw_requested
+                && runner_state.activity_state != ActivityState::Suspended
+            {
                 let (_, winit_windows, _, _) = event_writer_system_state.get_mut(&mut app.world);
                 for window in winit_windows.windows.values() {
                     window.request_redraw();
@@ -762,7 +753,7 @@ fn handle_winit_event(
                     app.send_event(WindowDestroyed { window });
                 }
                 WindowEvent::RedrawRequested => {
-                    run_app_update_if_should(runner_state, app);
+                    run_app_update(runner_state, app);
                 }
                 _ => {}
             }
@@ -785,14 +776,14 @@ fn handle_winit_event(
             app.send_event(ApplicationLifetime::Suspended);
             // Mark the state as `WillSuspend`. This will let the schedule run one last time
             // before actually suspending to let the application react
-            runner_state.active = ActiveState::WillSuspend;
+            runner_state.activity_state = ActivityState::WillSuspend;
         }
         Event::Resumed => {
-            match runner_state.active {
-                ActiveState::NotYetStarted => app.send_event(ApplicationLifetime::Started),
+            match runner_state.activity_state {
+                ActivityState::NotYetStarted => app.send_event(ApplicationLifetime::Started),
                 _ => app.send_event(ApplicationLifetime::Resumed),
             }
-            runner_state.active = ActiveState::WillResume;
+            runner_state.activity_state = ActivityState::WillResume;
         }
         Event::UserEvent(RequestRedraw) => {
             runner_state.redraw_requested = true;
@@ -801,12 +792,29 @@ fn handle_winit_event(
     }
 }
 
-fn run_app_update_if_should(runner_state: &mut WinitAppRunnerState, app: &mut App) {
-    runner_state.reset_on_update();
+fn should_update(runner_state: &WinitAppRunnerState, update_mode: UpdateMode) -> bool {
+    let handle_event = match update_mode {
+        UpdateMode::Continuous => {
+            runner_state.wait_elapsed
+                || runner_state.window_event_received
+                || runner_state.device_event_received
+        }
+        UpdateMode::Reactive {
+            react_to_window_events,
+            react_to_device_events,
+            ..
+        } => {
+            runner_state.wait_elapsed
+                || (runner_state.window_event_received && react_to_window_events)
+                || (runner_state.device_event_received && react_to_device_events)
+        }
+    };
 
-    if !runner_state.active.should_run() {
-        return;
-    }
+    handle_event && runner_state.activity_state.is_active()
+}
+
+fn run_app_update(runner_state: &mut WinitAppRunnerState, app: &mut App) {
+    runner_state.reset_on_update();
 
     if app.plugins_state() == PluginsState::Cleaned {
         app.update();
