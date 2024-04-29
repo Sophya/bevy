@@ -2532,6 +2532,17 @@ category = "Window"
 wasm = true
 
 [[example]]
+name = "framerate"
+path = "examples/window/framerate.rs"
+doc-scrape-examples = true
+
+[package.metadata.example.framerate]
+name = "Framerate"
+description = "Demonstrates settings to limit framerate by using Winit settings"
+category = "Window"
+wasm = true
+
+[[example]]
 name = "multiple_windows"
 path = "examples/window/multiple_windows.rs"
 doc-scrape-examples = true

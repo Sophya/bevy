@@ -406,6 +406,7 @@ Example | Description
 --- | ---
 [Clear Color](../examples/window/clear_color.rs) | Creates a solid color window
 [Low Power](../examples/window/low_power.rs) | Demonstrates settings to reduce power use for bevy applications
+[Framerate](../examples/window/framerate.rs) | Demonstrates settings to limit framerate by using Winit settings
 [Multiple Windows](../examples/window/multiple_windows.rs) | Demonstrates creating multiple windows, and rendering to them
 [Scale Factor Override](../examples/window/scale_factor_override.rs) | Illustrates how to customize the default window settings
 [Screenshot](../examples/window/screenshot.rs) | Shows how to save screenshots to disk
