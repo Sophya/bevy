@@ -179,6 +179,8 @@ struct WinitAppRunnerState {
     window_event_received: bool,
     /// Is `true` if a new [`DeviceEvent`] has been received since the last update.
     device_event_received: bool,
+    /// Is `true` if a new [`UserEvent`] has been received since the last update.
+    user_event_received: bool,
     /// Is `true` if the app has requested a redraw since the last update.
     redraw_requested: bool,
     /// Is `true` if enough time has elapsed since `last_update` to run another update.
@@ -191,6 +193,7 @@ impl WinitAppRunnerState {
     fn reset_on_update(&mut self) {
         self.window_event_received = false;
         self.device_event_received = false;
+        self.user_event_received = false;
     }
 }
 
@@ -201,6 +204,7 @@ impl Default for WinitAppRunnerState {
             update_mode: UpdateMode::Continuous,
             window_event_received: false,
             device_event_received: false,
+            user_event_received: false,
             redraw_requested: false,
             wait_elapsed: false,
             // 3 seems to be enough, 5 is a safe margin
@@ -482,6 +486,16 @@ fn handle_winit_event(
                 update_mode = config.update_mode(focused);
             }
 
+            if update_mode != runner_state.update_mode {
+                // Trigger the next redraw since we're changing the update mode
+                runner_state.redraw_requested = true;
+                // Consider the wait as elapsed since it could have been cancelled by a user event
+                runner_state.wait_elapsed = true;
+
+                runner_state.update_mode = update_mode;
+            }
+
+
             match update_mode {
                 UpdateMode::Continuous => {
                     // per winit's docs on [Window::is_visible](https://docs.rs/winit/latest/winit/window/struct.Window.html#method.is_visible),
@@ -524,12 +538,6 @@ fn handle_winit_event(
                         }
                     }
                 }
-            }
-
-            if update_mode != runner_state.update_mode {
-                // Trigger the next redraw since we're changing the update mode
-                runner_state.redraw_requested = true;
-                runner_state.update_mode = update_mode;
             }
 
             if runner_state.redraw_requested
@@ -752,9 +760,6 @@ fn handle_winit_event(
                 WindowEvent::Destroyed => {
                     app.send_event(WindowDestroyed { window });
                 }
-                WindowEvent::RedrawRequested => {
-                    run_app_update(runner_state, app);
-                }
                 _ => {}
             }
 
@@ -787,6 +792,7 @@ fn handle_winit_event(
         }
         Event::UserEvent(RequestRedraw) => {
             runner_state.redraw_requested = true;
+            runner_state.user_event_received = true;
         }
         _ => (),
     }
@@ -796,6 +802,7 @@ fn should_update(runner_state: &WinitAppRunnerState, update_mode: UpdateMode) ->
     let handle_event = match update_mode {
         UpdateMode::Continuous => {
             runner_state.wait_elapsed
+                || runner_state.user_event_received
                 || runner_state.window_event_received
                 || runner_state.device_event_received
         }
@@ -805,6 +812,7 @@ fn should_update(runner_state: &WinitAppRunnerState, update_mode: UpdateMode) ->
             ..
         } => {
             runner_state.wait_elapsed
+                || runner_state.user_event_received
                 || (runner_state.window_event_received && react_to_window_events)
                 || (runner_state.device_event_received && react_to_device_events)
         }
