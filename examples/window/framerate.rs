@@ -1,4 +1,5 @@
 //! This example illustrates how to implement basic framerate limit through the Winit settings.
+//! Additionally, for wasm, it shows how to force an external redraw, to wake up the app on demand.
 
 use std::time::Duration;
 
@@ -11,7 +12,16 @@ fn main() {
     App::new()
         .insert_resource(Framerate(30.0))
         .add_plugins(DefaultPlugins)
-        .add_systems(Startup, test_setup::setup)
+        .add_systems(
+            Startup,
+            (
+                test_setup::setup,
+                // Improvement to force an external redraw in-between frames, so that switching
+                // from low FPS to high FPS happens instantly rather than at the next frame
+                #[cfg(target_arch = "wasm32")]
+                wasm::setup_external_redraw,
+            ),
+        )
         .add_systems(
             Update,
             (
@@ -169,5 +179,51 @@ pub(crate) mod test_setup {
             }),
             FramerateText,
         ));
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod wasm {
+    use std::sync::{Arc, Mutex};
+
+    use bevy::{ecs::system::NonSend, window::RequestRedraw, winit::EventLoopProxy};
+    use once_cell::sync::Lazy;
+
+    use wasm_bindgen::prelude::*;
+    use wasm_bindgen::JsCast;
+    use web_sys::KeyboardEvent;
+
+    pub static EVENT_LOOP_PROXY: Lazy<Arc<Mutex<Option<EventLoopProxy>>>> =
+        Lazy::new(|| Arc::new(Mutex::new(None)));
+
+    #[wasm_bindgen]
+    pub fn request_redraw() -> Result<(), String> {
+        let proxy = EVENT_LOOP_PROXY.lock().unwrap();
+        if let Some(proxy) = &*proxy {
+            proxy
+                .send_event(RequestRedraw)
+                .map_err(|_| "Request redraw error: failed to send event".to_string())
+        } else {
+            Err("Request redraw error: event loop proxy not found".to_string())
+        }
+    }
+
+    pub(crate) fn setup_external_redraw(event_loop_proxy: NonSend<EventLoopProxy>) {
+        *EVENT_LOOP_PROXY.lock().unwrap() = Some((*event_loop_proxy).clone());
+
+        let window = web_sys::window().unwrap();
+        let document = window.document().unwrap();
+
+        let closure = Closure::wrap(Box::new(move |event: KeyboardEvent| {
+            let key = event.key();
+            if key.len() == 1 && key.chars().next().map_or(false, |ch| ch.is_digit(10)) {
+                request_redraw().unwrap();
+            }
+        }) as Box<dyn FnMut(KeyboardEvent)>);
+
+        document
+            .add_event_listener_with_callback("keydown", closure.as_ref().unchecked_ref())
+            .unwrap();
+        closure.forget();
     }
 }
