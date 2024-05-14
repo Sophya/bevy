@@ -172,7 +172,7 @@ impl AppSendEvent for App {
 /// [`UpdateMode`].
 struct WinitAppRunnerState {
     /// Current activity state of the app.
-    activity_state: ActivityState,
+    activity_state: UpdateState,
     /// Current update mode of the app.
     update_mode: UpdateMode,
     /// Is `true` if a new [`WindowEvent`] has been received since the last update.
@@ -200,7 +200,7 @@ impl WinitAppRunnerState {
 impl Default for WinitAppRunnerState {
     fn default() -> Self {
         Self {
-            activity_state: ActivityState::NotYetStarted,
+            activity_state: UpdateState::NotYetStarted,
             update_mode: UpdateMode::Continuous,
             window_event_received: false,
             device_event_received: false,
@@ -214,7 +214,7 @@ impl Default for WinitAppRunnerState {
 }
 
 #[derive(PartialEq, Eq, Debug)]
-enum ActivityState {
+enum UpdateState {
     NotYetStarted,
     Active,
     Suspended,
@@ -222,7 +222,7 @@ enum ActivityState {
     WillResume,
 }
 
-impl ActivityState {
+impl UpdateState {
     #[inline]
     fn is_active(&self) -> bool {
         match self {
@@ -341,13 +341,6 @@ fn handle_winit_event(
         runner_state.redraw_requested = true;
     }
 
-    if let Some(app_exit_events) = app.world.get_resource::<Events<AppExit>>() {
-        if app_exit_event_reader.read(app_exit_events).last().is_some() {
-            event_loop.exit();
-            return;
-        }
-    }
-
     // create any new windows
     // (even if app did not update, some may have been created by plugin setup)
     create_windows(event_loop, create_window.get_mut(&mut app.world));
@@ -412,8 +405,8 @@ fn handle_winit_event(
                 should_update = true;
             }
 
-            if runner_state.activity_state == ActivityState::WillSuspend {
-                runner_state.activity_state = ActivityState::Suspended;
+            if runner_state.activity_state == UpdateState::WillSuspend {
+                runner_state.activity_state = UpdateState::Suspended;
                 // Trigger one last update to enter the suspended state
                 should_update = true;
 
@@ -427,8 +420,8 @@ fn handle_winit_event(
                 }
             }
 
-            if runner_state.activity_state == ActivityState::WillResume {
-                runner_state.activity_state = ActivityState::Active;
+            if runner_state.activity_state == UpdateState::WillResume {
+                runner_state.activity_state = UpdateState::Active;
                 // Trigger the update to enter the active state
                 should_update = true;
                 // Trigger the next redraw ro refresh the screen immediately
@@ -541,7 +534,7 @@ fn handle_winit_event(
             }
 
             if runner_state.redraw_requested
-                && runner_state.activity_state != ActivityState::Suspended
+                && runner_state.activity_state != UpdateState::Suspended
             {
                 let (_, winit_windows, _, _) = event_writer_system_state.get_mut(&mut app.world);
                 for window in winit_windows.windows.values() {
@@ -795,6 +788,13 @@ fn handle_winit_event(
             runner_state.user_event_received = true;
         }
         _ => (),
+    }
+
+    if let Some(app_exit_events) = app.world.get_resource::<Events<AppExit>>() {
+        if app_exit_event_reader.read(app_exit_events).last().is_some() {
+            event_loop.exit();
+            return;
+        }
     }
 }
 
