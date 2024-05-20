@@ -7,7 +7,8 @@
 
 pub mod accessibility;
 mod converters;
-mod runner;
+// mod runner;
+mod state;
 mod system;
 mod winit_config;
 mod winit_windows;
@@ -31,7 +32,7 @@ use winit::event_loop::EventLoopBuilder;
 
 use crate::accessibility::{AccessKitAdapters, AccessKitPlugin, WinitActionHandlers};
 
-use crate::runner::winit_runner;
+use crate::state::winit_runner;
 
 /// [`AndroidApp`] provides an interface to query the application state as well as monitor events
 /// (for example lifecycle and input events).
