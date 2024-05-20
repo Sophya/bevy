@@ -12,49 +12,25 @@ mod system;
 mod winit_config;
 mod winit_windows;
 
-use approx::relative_eq;
 use bevy_a11y::AccessibilityRequested;
-use bevy_utils::Instant;
 pub use system::create_windows;
-use system::{changed_windows, despawn_windows, CachedWindow};
-use winit::dpi::{LogicalSize, PhysicalSize};
+use system::{changed_windows, despawn_windows};
 pub use winit_config::*;
 pub use winit_windows::*;
 
-use bevy_app::{App, AppExit, Last, Plugin, PluginsState};
-use bevy_ecs::event::{Events, ManualEventReader};
+use bevy_app::{App, Last, Plugin};
 use bevy_ecs::prelude::*;
-use bevy_ecs::system::SystemState;
-use bevy_input::{
-    mouse::{MouseButtonInput, MouseMotion, MouseScrollUnit, MouseWheel},
-    touchpad::{TouchpadMagnify, TouchpadRotate},
-};
-use bevy_math::{ivec2, DVec2, Vec2};
-#[cfg(not(target_arch = "wasm32"))]
-use bevy_tasks::tick_global_task_pools_on_main_thread;
-use bevy_utils::tracing::{error, trace, warn};
-use bevy_window::{
-    exit_on_all_closed, ApplicationLifetime, CursorEntered, CursorLeft, CursorMoved,
-    FileDragAndDrop, Ime, ReceivedCharacter, RequestRedraw, Window,
-    WindowBackendScaleFactorChanged, WindowCloseRequested, WindowCreated, WindowDestroyed,
-    WindowFocused, WindowMoved, WindowOccluded, WindowResized, WindowScaleFactorChanged,
-    WindowThemeChanged,
-};
+use bevy_window::{exit_on_all_closed, Window, WindowCreated, WindowResized};
 #[cfg(target_os = "android")]
 use bevy_window::{PrimaryWindow, RawHandleWrapper};
 
 #[cfg(target_os = "android")]
 pub use winit::platform::android::activity as android_activity;
 
-use winit::event::StartCause;
-use winit::{
-    event::{self, DeviceEvent, Event, WindowEvent},
-    event_loop::{ControlFlow, EventLoop, EventLoopBuilder, EventLoopWindowTarget},
-};
+use winit::event_loop::EventLoopBuilder;
 
 use crate::accessibility::{AccessKitAdapters, AccessKitPlugin, WinitActionHandlers};
 
-use crate::converters::convert_winit_theme;
 use crate::runner::winit_runner;
 
 /// [`AndroidApp`] provides an interface to query the application state as well as monitor events
@@ -176,6 +152,7 @@ pub type EventLoopProxy = winit::event_loop::EventLoopProxy<WakeUp>;
 trait AppSendEvent {
     fn send_event<E: bevy_ecs::event::Event>(&mut self, event: E);
 }
+
 impl AppSendEvent for App {
     fn send_event<E: bevy_ecs::event::Event>(&mut self, event: E) {
         self.world.send_event(event);

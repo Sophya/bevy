@@ -6,11 +6,10 @@
 //! See `winit_runner` for details.
 
 use approx::relative_eq;
-use bevy_a11y::AccessibilityRequested;
 use bevy_utils::Instant;
 use winit::dpi::{LogicalSize, PhysicalSize};
 
-use bevy_app::{App, AppExit, Last, Plugin, PluginsState};
+use bevy_app::{App, AppExit, PluginsState};
 use bevy_ecs::event::{Events, ManualEventReader};
 use bevy_ecs::prelude::*;
 use bevy_ecs::system::SystemState;
@@ -23,9 +22,9 @@ use bevy_math::{ivec2, DVec2, Vec2};
 use bevy_tasks::tick_global_task_pools_on_main_thread;
 use bevy_utils::tracing::{error, trace, warn};
 use bevy_window::{
-    exit_on_all_closed, ApplicationLifetime, CursorEntered, CursorLeft, CursorMoved,
+    ApplicationLifetime, CursorEntered, CursorLeft, CursorMoved,
     FileDragAndDrop, Ime, ReceivedCharacter, RequestRedraw, Window,
-    WindowBackendScaleFactorChanged, WindowCloseRequested, WindowCreated, WindowDestroyed,
+    WindowBackendScaleFactorChanged, WindowCloseRequested, WindowDestroyed,
     WindowFocused, WindowMoved, WindowOccluded, WindowResized, WindowScaleFactorChanged,
     WindowThemeChanged,
 };
@@ -38,11 +37,10 @@ pub use winit::platform::android::activity as android_activity;
 use winit::event::StartCause;
 use winit::{
     event::{self, DeviceEvent, Event, WindowEvent},
-    event_loop::{ControlFlow, EventLoop, EventLoopBuilder, EventLoopWindowTarget},
+    event_loop::{ControlFlow, EventLoop, EventLoopWindowTarget},
 };
-use bevy_a11y::AccessibilitySystem::Update;
 
-use crate::accessibility::{AccessKitAdapters, AccessKitPlugin, WinitActionHandlers};
+use crate::accessibility::{AccessKitAdapters};
 
 use crate::converters::convert_winit_theme;
 use crate::{AppSendEvent, converters, create_windows, CreateWindowParams, react_to_resize, UpdateMode, WakeUp, WinitSettings, WinitWindows};
