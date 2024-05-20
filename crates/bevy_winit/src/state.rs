@@ -652,7 +652,6 @@ fn handle_winit_event<T: Event>(
             runner_state.activity_state = UpdateState::WillResume;
         }
         WinitEvent::UserEvent(event) => {
-            runner_state.redraw_requested = true;
             runner_state.user_event_received = true;
 
             app.world.send_event(event);
