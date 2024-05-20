@@ -32,7 +32,7 @@ use crate::{
 /// default values.
 #[allow(clippy::too_many_arguments)]
 pub fn create_windows<F: QueryFilter + 'static>(
-    event_loop: &EventLoopWindowTarget<crate::UserEvent>,
+    event_loop: &EventLoopWindowTarget<crate::WakeUp>,
     (
         mut commands,
         mut created_windows,
