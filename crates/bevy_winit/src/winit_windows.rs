@@ -13,6 +13,7 @@ use winit::{
     dpi::{LogicalSize, PhysicalPosition},
     monitor::MonitorHandle,
 };
+use bevy_ecs::event::Event;
 
 use crate::{
     accessibility::{AccessKitAdapters, WinitActionHandler, WinitActionHandlers},
@@ -37,9 +38,9 @@ pub struct WinitWindows {
 
 impl WinitWindows {
     /// Creates a `winit` window and associates it with our entity.
-    pub fn create_window(
+    pub fn create_window<T: Event>(
         &mut self,
-        event_loop: &winit::event_loop::EventLoopWindowTarget<crate::WakeUp>,
+        event_loop: &winit::event_loop::EventLoopWindowTarget<T>,
         entity: Entity,
         window: &Window,
         adapters: &mut AccessKitAdapters,

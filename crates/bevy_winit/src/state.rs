@@ -5,6 +5,7 @@
 //! The app's [runner](bevy_app::App::runner) is set by `WinitPlugin` and handles the `winit` [`EventLoop`].
 //! See `winit_runner` for details.
 
+use std::marker::PhantomData;
 use approx::relative_eq;
 use bevy_utils::Instant;
 use winit::dpi::{LogicalSize, PhysicalSize};
@@ -43,7 +44,7 @@ use winit::{
 use crate::accessibility::{AccessKitAdapters};
 
 use crate::converters::convert_winit_theme;
-use crate::{AppSendEvent, converters, create_windows, CreateWindowParams, react_to_resize, UpdateMode, WakeUp, WinitSettings, WinitWindows};
+use crate::{AppSendEvent, converters, create_windows, CreateWindowParams, react_to_resize, UpdateMode, WinitSettings, WinitWindows};
 use crate::system::CachedWindow;
 
 /// [`AndroidApp`] provides an interface to query the application state as well as monitor events
@@ -54,7 +55,7 @@ pub static ANDROID_APP: std::sync::OnceLock<android_activity::AndroidApp> =
 
 /// Persistent state that is used to run the [`App`] according to the current
 /// [`UpdateMode`].
-struct WinitAppRunnerState {
+struct WinitAppRunnerState<T: Event> {
     /// Current activity state of the app.
     activity_state: UpdateState,
     /// Current update mode of the app.
@@ -63,7 +64,7 @@ struct WinitAppRunnerState {
     window_event_received: bool,
     /// Is `true` if a new [`DeviceEvent`] has been received since the last update.
     device_event_received: bool,
-    /// Is `true` if a new [`WakeUp`] has been received since the last update.
+    /// Is `true` if a new [`T`] event has been received since the last update.
     user_event_received: bool,
     /// Is `true` if the app has requested a redraw since the last update.
     redraw_requested: bool,
@@ -71,9 +72,10 @@ struct WinitAppRunnerState {
     wait_elapsed: bool,
     /// Number of "forced" updates to trigger on application start
     startup_forced_updates: u32,
+    _marker: PhantomData<T>,
 }
 
-impl WinitAppRunnerState {
+impl<T: Event> WinitAppRunnerState<T> {
     fn reset_on_update(&mut self) {
         self.window_event_received = false;
         self.device_event_received = false;
@@ -81,7 +83,7 @@ impl WinitAppRunnerState {
     }
 }
 
-impl Default for WinitAppRunnerState {
+impl<T: Event> Default for WinitAppRunnerState<T> {
     fn default() -> Self {
         Self {
             activity_state: UpdateState::NotYetStarted,
@@ -93,6 +95,7 @@ impl Default for WinitAppRunnerState {
             wait_elapsed: false,
             // 3 seems to be enough, 5 is a safe margin
             startup_forced_updates: 5,
+            _marker: PhantomData,
         }
     }
 }
@@ -120,7 +123,7 @@ impl UpdateState {
 ///
 /// Overriding the app's [runner](bevy_app::App::runner) while using `WinitPlugin` will bypass the
 /// `EventLoop`.
-pub fn winit_runner(mut app: App) {
+pub fn winit_runner<T: Event>(mut app: App) {
     if app.plugins_state() == PluginsState::Ready {
         app.finish();
         app.cleanup();
@@ -128,13 +131,13 @@ pub fn winit_runner(mut app: App) {
 
     let event_loop = app
         .world
-        .remove_non_send_resource::<EventLoop<WakeUp>>()
+        .remove_non_send_resource::<EventLoop<T>>()
         .unwrap();
 
     app.world
         .insert_non_send_resource(event_loop.create_proxy());
 
-    let mut runner_state = WinitAppRunnerState::default();
+    let mut runner_state = WinitAppRunnerState::<T>::default();
 
     // prepare structures to access data in the world
     let mut app_exit_event_reader = ManualEventReader::<AppExit>::default();
@@ -153,7 +156,7 @@ pub fn winit_runner(mut app: App) {
     let mut create_window =
         SystemState::<CreateWindowParams<Added<Window>>>::from_world(&mut app.world);
     // set up the event loop
-    let event_handler = move |event, event_loop: &EventLoopWindowTarget<WakeUp>| {
+    let event_handler = move |event, event_loop: &EventLoopWindowTarget<T>| {
         handle_winit_event(
             &mut app,
             &mut app_exit_event_reader,
@@ -175,10 +178,10 @@ pub fn winit_runner(mut app: App) {
 }
 
 #[allow(clippy::too_many_arguments /* TODO: probs can reduce # of args */)]
-fn handle_winit_event(
+fn handle_winit_event<T: Event>(
     app: &mut App,
     app_exit_event_reader: &mut ManualEventReader<AppExit>,
-    runner_state: &mut WinitAppRunnerState,
+    runner_state: &mut WinitAppRunnerState<T>,
     create_window: &mut SystemState<CreateWindowParams<Added<Window>>>,
     event_writer_system_state: &mut SystemState<(
         EventWriter<WindowResized>,
@@ -188,8 +191,8 @@ fn handle_winit_event(
     )>,
     focused_windows_state: &mut SystemState<(Res<WinitSettings>, Query<(Entity, &Window)>)>,
     redraw_event_reader: &mut ManualEventReader<RequestRedraw>,
-    event: WinitEvent<WakeUp>,
-    event_loop: &EventLoopWindowTarget<WakeUp>,
+    event: WinitEvent<T>,
+    event_loop: &EventLoopWindowTarget<T>,
 ) {
     #[cfg(feature = "trace")]
     let _span = bevy_utils::tracing::info_span!("winit event_handler").entered();
@@ -647,9 +650,11 @@ fn handle_winit_event(
             }
             runner_state.activity_state = UpdateState::WillResume;
         }
-        WinitEvent::UserEvent(WakeUp) => {
+        WinitEvent::UserEvent(event) => {
             runner_state.redraw_requested = true;
             runner_state.user_event_received = true;
+
+            app.world.send_event(event);
         }
         _ => (),
     }
@@ -662,7 +667,7 @@ fn handle_winit_event(
     }
 }
 
-fn should_update(runner_state: &WinitAppRunnerState, update_mode: UpdateMode) -> bool {
+fn should_update<T: Event>(runner_state: &WinitAppRunnerState<T>, update_mode: UpdateMode) -> bool {
     let handle_event = match update_mode {
         UpdateMode::Continuous => {
             runner_state.wait_elapsed
@@ -685,7 +690,7 @@ fn should_update(runner_state: &WinitAppRunnerState, update_mode: UpdateMode) ->
     handle_event && runner_state.activity_state.is_active()
 }
 
-fn run_app_update(runner_state: &mut WinitAppRunnerState, app: &mut App) {
+fn run_app_update<T: Event>(runner_state: &mut WinitAppRunnerState<T>, app: &mut App) {
     runner_state.reset_on_update();
 
     if app.plugins_state() == PluginsState::Cleaned {

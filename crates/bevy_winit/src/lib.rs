@@ -13,6 +13,7 @@ mod system;
 mod winit_config;
 mod winit_windows;
 
+use std::marker::PhantomData;
 use bevy_a11y::AccessibilityRequested;
 pub use system::create_windows;
 use system::{changed_windows, despawn_windows};
@@ -47,7 +48,7 @@ pub static ANDROID_APP: std::sync::OnceLock<android_activity::AndroidApp> =
 /// replace the existing [`App`] runner with one that constructs an [event loop](EventLoop) to
 /// receive window and input events from the OS.
 #[derive(Default)]
-pub struct WinitPlugin {
+pub struct WinitPlugin<T: Event> {
     /// Allows the window (and the event loop) to be created on any thread
     /// instead of only the main thread.
     ///
@@ -58,11 +59,12 @@ pub struct WinitPlugin {
     /// Only works on Linux (X11/Wayland) and Windows.
     /// This field is ignored on other platforms.
     pub run_on_any_thread: bool,
+    _marker: PhantomData<T>,
 }
 
-impl Plugin for WinitPlugin {
+impl<T: Event> Plugin for WinitPlugin<T> {
     fn build(&self, app: &mut App) {
-        let mut event_loop_builder = EventLoopBuilder::<WakeUp>::with_user_event();
+        let mut event_loop_builder = EventLoopBuilder::<T>::with_user_event();
 
         // linux check is needed because x11 might be enabled on other platforms.
         #[cfg(all(target_os = "linux", feature = "x11"))]
@@ -96,9 +98,10 @@ impl Plugin for WinitPlugin {
             event_loop_builder.with_android_app(ANDROID_APP.get().expect(msg).clone());
         }
 
-        app.init_non_send_resource::<WinitWindows>()
+        app.add_event::<T>()
+            .init_non_send_resource::<WinitWindows>()
             .init_resource::<WinitSettings>()
-            .set_runner(winit_runner)
+            .set_runner(winit_runner::<T>)
             .add_systems(
                 Last,
                 (
@@ -143,12 +146,12 @@ impl Plugin for WinitPlugin {
 #[derive(Debug, Default, Clone, Copy, Event)]
 pub struct WakeUp;
 
-/// The [`winit::event_loop::EventLoopProxy`] with the specific [`winit::event::Event::UserEvent`] used in the [`winit_runner`].
+/// The [`winit::event_loop::EventLoopProxy`] with the specific [`T`] used in the [`winit_runner`].
 ///
 /// The `EventLoopProxy` can be used to request a redraw from outside bevy.
 ///
 /// Use `NonSend<EventLoopProxy>` to receive this resource.
-pub type EventLoopProxy = winit::event_loop::EventLoopProxy<WakeUp>;
+pub type EventLoopProxy<T> = winit::event_loop::EventLoopProxy<T>;
 
 trait AppSendEvent {
     fn send_event<E: bevy_ecs::event::Event>(&mut self, event: E);

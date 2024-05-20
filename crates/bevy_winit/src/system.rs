@@ -16,6 +16,7 @@ use winit::{
     dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize},
     event_loop::EventLoopWindowTarget,
 };
+use bevy_ecs::event::Event;
 
 use crate::{
     converters::{
@@ -31,8 +32,8 @@ use crate::{
 /// If any of these entities are missing required components, those will be added with their
 /// default values.
 #[allow(clippy::too_many_arguments)]
-pub fn create_windows<F: QueryFilter + 'static>(
-    event_loop: &EventLoopWindowTarget<crate::WakeUp>,
+pub fn create_windows<F: QueryFilter + 'static, T: Event>(
+    event_loop: &EventLoopWindowTarget<T>,
     (
         mut commands,
         mut created_windows,

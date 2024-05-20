@@ -1,4 +1,5 @@
 use bevy_app::{Plugin, PluginGroup, PluginGroupBuilder};
+use bevy_winit::WakeUp;
 
 /// This plugin group will add all the default plugins for a *Bevy* application:
 /// * [`LogPlugin`](crate::log::LogPlugin)
@@ -65,7 +66,7 @@ impl PluginGroup for DefaultPlugins {
 
         #[cfg(feature = "bevy_winit")]
         {
-            group = group.add(bevy_winit::WinitPlugin::default());
+            group = group.add(bevy_winit::WinitPlugin::<WakeUp>::default());
         }
 
         #[cfg(feature = "bevy_render")]
