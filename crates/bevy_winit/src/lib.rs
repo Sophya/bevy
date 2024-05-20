@@ -13,8 +13,8 @@ mod system;
 mod winit_config;
 mod winit_windows;
 
-use std::marker::PhantomData;
 use bevy_a11y::AccessibilityRequested;
+use std::marker::PhantomData;
 pub use system::create_windows;
 use system::{changed_windows, despawn_windows};
 pub use winit_config::*;

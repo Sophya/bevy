@@ -5,9 +5,9 @@
 //! The app's [runner](bevy_app::App::runner) is set by `WinitPlugin` and handles the `winit` [`EventLoop`].
 //! See `winit_runner` for details.
 
-use std::marker::PhantomData;
 use approx::relative_eq;
 use bevy_utils::Instant;
+use std::marker::PhantomData;
 use winit::dpi::{LogicalSize, PhysicalSize};
 
 use bevy_app::{App, AppExit, PluginsState};
@@ -23,11 +23,10 @@ use bevy_math::{ivec2, DVec2, Vec2};
 use bevy_tasks::tick_global_task_pools_on_main_thread;
 use bevy_utils::tracing::{error, trace, warn};
 use bevy_window::{
-    ApplicationLifetime, CursorEntered, CursorLeft, CursorMoved,
-    FileDragAndDrop, Ime, ReceivedCharacter, RequestRedraw, Window,
-    WindowBackendScaleFactorChanged, WindowCloseRequested, WindowDestroyed,
-    WindowFocused, WindowMoved, WindowOccluded, WindowResized, WindowScaleFactorChanged,
-    WindowThemeChanged,
+    ApplicationLifetime, CursorEntered, CursorLeft, CursorMoved, FileDragAndDrop, Ime,
+    ReceivedCharacter, RequestRedraw, Window, WindowBackendScaleFactorChanged,
+    WindowCloseRequested, WindowDestroyed, WindowFocused, WindowMoved, WindowOccluded,
+    WindowResized, WindowScaleFactorChanged, WindowThemeChanged,
 };
 #[cfg(target_os = "android")]
 use bevy_window::{PrimaryWindow, RawHandleWrapper};
@@ -41,11 +40,14 @@ use winit::{
     event_loop::{ControlFlow, EventLoop, EventLoopWindowTarget},
 };
 
-use crate::accessibility::{AccessKitAdapters};
+use crate::accessibility::AccessKitAdapters;
 
 use crate::converters::convert_winit_theme;
-use crate::{AppSendEvent, converters, create_windows, CreateWindowParams, react_to_resize, UpdateMode, WinitSettings, WinitWindows};
 use crate::system::CachedWindow;
+use crate::{
+    converters, create_windows, react_to_resize, AppSendEvent, CreateWindowParams, UpdateMode,
+    WinitSettings, WinitWindows,
+};
 
 /// [`AndroidApp`] provides an interface to query the application state as well as monitor events
 /// (for example lifecycle and input events).
@@ -354,7 +356,6 @@ fn handle_winit_event<T: Event>(
 
                 runner_state.update_mode = update_mode;
             }
-
 
             match update_mode {
                 UpdateMode::Continuous => {

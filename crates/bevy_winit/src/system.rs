@@ -11,12 +11,12 @@ use bevy_window::{
     RawHandleWrapper, Window, WindowClosed, WindowCreated, WindowMode, WindowResized,
 };
 
+use bevy_ecs::event::Event;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use winit::{
     dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize},
     event_loop::EventLoopWindowTarget,
 };
-use bevy_ecs::event::Event;
 
 use crate::{
     converters::{

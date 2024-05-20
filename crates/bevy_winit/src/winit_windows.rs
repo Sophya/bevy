@@ -9,11 +9,11 @@ use bevy_ecs::entity::EntityHashMap;
 use bevy_utils::{tracing::warn, HashMap};
 use bevy_window::{CursorGrabMode, Window, WindowMode, WindowPosition, WindowResolution};
 
+use bevy_ecs::event::Event;
 use winit::{
     dpi::{LogicalSize, PhysicalPosition},
     monitor::MonitorHandle,
 };
-use bevy_ecs::event::Event;
 
 use crate::{
     accessibility::{AccessKitAdapters, WinitActionHandler, WinitActionHandlers},
