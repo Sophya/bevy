@@ -7,7 +7,6 @@
 
 pub mod accessibility;
 mod converters;
-// mod runner;
 mod state;
 mod system;
 mod winit_config;
@@ -127,6 +126,8 @@ impl<T: Event> Plugin for WinitPlugin<T> {
         // - https://github.com/rust-windowing/winit/blob/master/README.md#ios
         #[cfg(not(any(target_os = "android", target_os = "ios", target_os = "macos")))]
         {
+            use bevy_ecs::system::SystemState;
+
             // Otherwise, we want to create a window before `bevy_render` initializes the renderer
             // so that we have a surface to use as a hint. This improves compatibility with `wgpu`
             // backends, especially WASM/WebGL2.
