@@ -678,12 +678,13 @@ fn should_update<T: Event>(runner_state: &WinitAppRunnerState<T>, update_mode: U
         UpdateMode::Reactive {
             react_to_window_events,
             react_to_device_events,
+            react_to_user_events,
             ..
         } => {
             runner_state.wait_elapsed
-                || runner_state.user_event_received
                 || (runner_state.window_event_received && react_to_window_events)
                 || (runner_state.device_event_received && react_to_device_events)
+                || (runner_state.user_event_received && react_to_user_events)
         }
     };
 

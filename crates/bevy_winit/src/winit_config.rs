@@ -2,7 +2,7 @@ use bevy_ecs::system::Resource;
 use bevy_utils::Duration;
 
 /// Settings for the [`WinitPlugin`](super::WinitPlugin).
-#[derive(Debug, Resource)]
+#[derive(Debug, Resource, PartialEq)]
 pub struct WinitSettings {
     /// Determines how frequently the application can update when it has focus.
     pub focused_mode: UpdateMode,
@@ -18,32 +18,18 @@ impl WinitSettings {
     pub fn game() -> Self {
         WinitSettings {
             focused_mode: UpdateMode::Continuous,
-            unfocused_mode: UpdateMode::Reactive {
-                wait: Duration::from_secs_f64(1.0 / 60.0), // 60Hz,
-                react_to_window_events: true,
-                react_to_device_events: true,
-            },
+            unfocused_mode: UpdateMode::reactive(Duration::from_secs_f64(1.0 / 60.0)),
         }
     }
 
     /// Default settings for desktop applications.
     ///
-    /// [`Reactive`](UpdateMode::Reactive) if windows have focus,
-    /// [`ReactiveLowPower`](UpdateMode::ReactiveLowPower) otherwise.
-    ///
-    /// Use the [`EventLoopProxy`](crate::EventLoopProxy) to request a redraw from outside bevy.
+    /// [`Reactive`](UpdateMode::reactive) if windows have focus,
+    /// [`ReactiveLowPower`](UpdateMode::reactive_low_power) otherwise.
     pub fn desktop_app() -> Self {
         WinitSettings {
-            focused_mode: UpdateMode::Reactive {
-                wait: Duration::from_secs(1),
-                react_to_window_events: true,
-                react_to_device_events: true,
-            },
-            unfocused_mode: UpdateMode::Reactive {
-                wait: Duration::from_secs(5),
-                react_to_window_events: true,
-                react_to_device_events: false,
-            },
+            focused_mode: UpdateMode::reactive(Duration::from_secs(1)),
+            unfocused_mode: UpdateMode::reactive_low_power(Duration::from_secs(60)),
         }
     }
 
@@ -80,7 +66,7 @@ pub enum UpdateMode {
     /// - a redraw has been requested by [`RequestRedraw`](bevy_window::RequestRedraw)
     /// - new [window](`winit::event::WindowEvent`) or [raw input](`winit::event::DeviceEvent`)
     /// events have appeared
-    /// - a redraw has been requested with the [`EventLoopProxy`](crate::EventLoopProxy)
+    /// - a user event has been sent with the [`EventLoopProxy`](crate::EventLoopProxy)
     Reactive {
         /// The approximate time from the start of one update to the next.
         ///
@@ -91,5 +77,39 @@ pub enum UpdateMode {
         react_to_window_events: bool,
         /// Reacts to device events, that will wake up the loop if it's in a wait wtate
         react_to_device_events: bool,
+        /// Reacts to user events, that will wake up the loop if it's in a wait wtate
+        react_to_user_events: bool,
     },
+}
+
+impl UpdateMode {
+    /// React to window, device and user events
+    pub fn reactive(wait: Duration) -> UpdateMode {
+        Self::Reactive {
+            wait,
+            react_to_window_events: true,
+            react_to_device_events: true,
+            react_to_user_events: true,
+        }
+    }
+
+    /// React to window and user events, but not to device events
+    pub fn reactive_low_power(wait: Duration) -> UpdateMode {
+        Self::Reactive {
+            wait,
+            react_to_window_events: true,
+            react_to_device_events: false,
+            react_to_user_events: true,
+        }
+    }
+
+    /// React only to user events, but not to window or device events
+    pub fn manual(wait: Duration) -> UpdateMode {
+        Self::Reactive {
+            wait,
+            react_to_window_events: false,
+            react_to_device_events: false,
+            react_to_user_events: true,
+        }
+    }
 }

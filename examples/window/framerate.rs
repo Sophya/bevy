@@ -42,16 +42,12 @@ struct Framerate(pub f64);
 fn update_winit(framerate: Res<Framerate>, mut winit_config: ResMut<WinitSettings>) {
     let max_tick_rate = Duration::from_secs(60);
     *winit_config = WinitSettings {
-        focused_mode: UpdateMode::Reactive {
-            wait: Duration::from_secs_f64(framerate.recip()).min(max_tick_rate),
-            react_to_window_events: false,
-            react_to_device_events: false,
-        },
-        unfocused_mode: UpdateMode::Reactive {
-            wait: Duration::from_secs_f64(framerate.recip()).min(max_tick_rate),
-            react_to_window_events: false,
-            react_to_device_events: false,
-        },
+        focused_mode: UpdateMode::manual(
+            Duration::from_secs_f64(framerate.recip()).min(max_tick_rate),
+        ),
+        unfocused_mode: UpdateMode::manual(
+            Duration::from_secs_f64(framerate.recip()).min(max_tick_rate),
+        ),
     }
 }
 
