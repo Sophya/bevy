@@ -2,7 +2,7 @@ use bevy_ecs::system::Resource;
 use bevy_utils::Duration;
 
 /// Settings for the [`WinitPlugin`](super::WinitPlugin).
-#[derive(Debug, Resource, PartialEq)]
+#[derive(Debug, Resource, Clone, PartialEq)]
 pub struct WinitSettings {
     /// Determines how frequently the application can update when it has focus.
     pub focused_mode: UpdateMode,
@@ -13,23 +13,27 @@ pub struct WinitSettings {
 impl WinitSettings {
     /// Default settings for games.
     ///
-    /// [`Continuous`](UpdateMode::Continuous) if windows have focus,
-    /// [`ReactiveLowPower`](UpdateMode::ReactiveLowPower) otherwise.
+    /// [`Continuous`](UpdateMode::continuous) if windows have focus,
+    /// [`ReactiveLowPower`](UpdateMode::reactive_low_power) otherwise, with 60 updates every second.
     pub fn game() -> Self {
         WinitSettings {
-            focused_mode: UpdateMode::Continuous,
-            unfocused_mode: UpdateMode::reactive(Duration::from_secs_f64(1.0 / 60.0)),
+            focused_mode: UpdateMode::continuous(),
+            unfocused_mode: UpdateMode::reactive_at_target_interval(Duration::from_secs_f64(
+                1.0 / 60.0,
+            )),
         }
     }
 
     /// Default settings for desktop applications.
     ///
-    /// [`Reactive`](UpdateMode::reactive) if windows have focus,
-    /// [`ReactiveLowPower`](UpdateMode::reactive_low_power) otherwise.
+    /// [`Reactive`](UpdateMode::reactive) if windows have focus, with an update every 1 second.
+    /// [`ReactiveLowPower`](UpdateMode::reactive_low_power) otherwise, with an update every 60 seconds.
     pub fn desktop_app() -> Self {
         WinitSettings {
-            focused_mode: UpdateMode::reactive(Duration::from_secs(1)),
-            unfocused_mode: UpdateMode::reactive_low_power(Duration::from_secs(60)),
+            focused_mode: UpdateMode::reactive_at_target_interval(Duration::from_secs(1)),
+            unfocused_mode: UpdateMode::reactive_low_power_at_target_interval(Duration::from_secs(
+                60,
+            )),
         }
     }
 
@@ -50,43 +54,94 @@ impl Default for WinitSettings {
     }
 }
 
+/// Represents how the application should update.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct UpdateMode {
+    /// Determines what events should trigger an [`App`](bevy_app::App) update.
+    /// Additionally, the app will also be updated if:
+    ///   - A `wait` time has elapsed since the previous update
+    ///   - A redraw has been requested by [`RequestRedraw`](bevy_window::RequestRedraw)
+    pub reactivity: Reactivity,
+    /// Determines how frequently an [`App`](bevy_app::App) should update.
+    ///
+    /// **Note:** This setting is independent of VSync. VSync is controlled by a window's
+    /// [`PresentMode`](bevy_window::PresentMode) setting. If an app can update faster than the refresh
+    /// rate, but VSync is enabled, the update rate will be indirectly limited by the renderer.
+    pub update_frequency: UpdateFrequency,
+}
+
+impl UpdateMode {
+    /// Creates an `UpdateMode` with continuous updates.
+    ///
+    /// The application will update as frequently as possible.
+    pub fn continuous() -> Self {
+        Self {
+            reactivity: Reactivity::reactive(),
+            update_frequency: UpdateFrequency::Continuous,
+        }
+    }
+
+    /// Creates an `UpdateMode` with reactive updates and a specified target interval.
+    ///
+    /// The application will update reactively and wait for the specified interval between updates.
+    ///
+    /// # Arguments
+    ///
+    /// * `interval` - The duration to wait between updates.
+    pub fn reactive_at_target_interval(interval: Duration) -> Self {
+        Self {
+            reactivity: Reactivity::reactive(),
+            update_frequency: UpdateFrequency::TargetInterval(interval),
+        }
+    }
+
+    /// Creates an `UpdateMode` with low-power reactive updates and a specified target interval.
+    ///
+    /// The application will update reactively with low power consumption and wait for the specified interval between updates.
+    ///
+    /// # Arguments
+    ///
+    /// * `interval` - The duration to wait between updates.
+    pub fn reactive_low_power_at_target_interval(interval: Duration) -> Self {
+        Self {
+            reactivity: Reactivity::reactive_low_power(),
+            update_frequency: UpdateFrequency::TargetInterval(interval),
+        }
+    }
+}
+
 /// Determines how frequently an [`App`](bevy_app::App) should update.
 ///
 /// **Note:** This setting is independent of VSync. VSync is controlled by a window's
 /// [`PresentMode`](bevy_window::PresentMode) setting. If an app can update faster than the refresh
 /// rate, but VSync is enabled, the update rate will be indirectly limited by the renderer.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum UpdateMode {
+pub enum UpdateFrequency {
     /// The [`App`](bevy_app::App) will update over and over, as fast as it possibly can, until an
     /// [`AppExit`](bevy_app::AppExit) event appears.
     Continuous,
-    /// The [`App`](bevy_app::App) will update in response to the following, until an
-    /// [`AppExit`](bevy_app::AppExit) event appears:
-    /// - `wait` time has elapsed since the previous update
-    /// - a redraw has been requested by [`RequestRedraw`](bevy_window::RequestRedraw)
-    /// - new [window](`winit::event::WindowEvent`) or [raw input](`winit::event::DeviceEvent`)
-    /// events have appeared
-    /// - a user event has been sent with the [`EventLoopProxy`](crate::EventLoopProxy)
-    Reactive {
-        /// The approximate time from the start of one update to the next.
-        ///
-        /// **Note:** This has no upper limit.
-        /// The [`App`](bevy_app::App) will wait indefinitely if you set this to [`Duration::MAX`].
-        wait: Duration,
-        /// Reacts to window events, that will wake up the loop if it's in a wait wtate
-        react_to_window_events: bool,
-        /// Reacts to device events, that will wake up the loop if it's in a wait wtate
-        react_to_device_events: bool,
-        /// Reacts to user events, that will wake up the loop if it's in a wait wtate
-        react_to_user_events: bool,
-    },
+    /// The approximate time from the start of one update to the next.
+    ///
+    /// **Note:** This has no upper limit.
+    /// The [`App`](bevy_app::App) will wait indefinitely if you set this to [`Duration::MAX`].
+    TargetInterval(Duration),
 }
 
-impl UpdateMode {
+/// Determines what events should trigger an [`App`](bevy_app::App) update.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Reactivity {
+    /// Indicates whether the application should react to window events.
+    pub react_to_window_events: bool,
+    /// Indicates whether the application should react to device events.
+    pub react_to_device_events: bool,
+    /// Indicates whether the application should react to user events sent through the [`EventLoopProxy`](crate::EventLoopProxy)
+    pub react_to_user_events: bool,
+}
+
+impl Reactivity {
     /// React to window, device and user events
-    pub fn reactive(wait: Duration) -> UpdateMode {
-        Self::Reactive {
-            wait,
+    pub fn reactive() -> Self {
+        Self {
             react_to_window_events: true,
             react_to_device_events: true,
             react_to_user_events: true,
@@ -94,9 +149,8 @@ impl UpdateMode {
     }
 
     /// React to window and user events, but not to device events
-    pub fn reactive_low_power(wait: Duration) -> UpdateMode {
-        Self::Reactive {
-            wait,
+    pub fn reactive_low_power() -> Self {
+        Self {
             react_to_window_events: true,
             react_to_device_events: false,
             react_to_user_events: true,
@@ -104,9 +158,8 @@ impl UpdateMode {
     }
 
     /// React only to user events, but not to window or device events
-    pub fn manual(wait: Duration) -> UpdateMode {
-        Self::Reactive {
-            wait,
+    pub fn manual() -> Self {
+        Self {
             react_to_window_events: false,
             react_to_device_events: false,
             react_to_user_events: true,

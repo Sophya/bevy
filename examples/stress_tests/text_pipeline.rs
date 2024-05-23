@@ -26,8 +26,8 @@ fn main() {
             LogDiagnosticsPlugin::default(),
         ))
         .insert_resource(WinitSettings {
-            focused_mode: UpdateMode::Continuous,
-            unfocused_mode: UpdateMode::Continuous,
+            focused_mode: UpdateMode::continuous(),
+            unfocused_mode: UpdateMode::continuous(),
         })
         .add_systems(Startup, spawn)
         .add_systems(Update, update_text_bounds)
