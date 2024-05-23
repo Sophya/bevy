@@ -32,7 +32,7 @@ use winit::event_loop::EventLoopBuilder;
 
 use crate::accessibility::{AccessKitAdapters, AccessKitPlugin, WinitActionHandlers};
 
-use crate::state::winit_runner;
+use crate::state::{react_to_scale_factor_changed, winit_runner};
 
 /// [`AndroidApp`] provides an interface to query the application state as well as monitor events
 /// (for example lifecycle and input events).
@@ -108,6 +108,7 @@ impl<T: Event> Plugin for WinitPlugin<T> {
                     // so we don't need to care about its ordering relative to `changed_windows`
                     changed_windows.ambiguous_with(exit_on_all_closed),
                     despawn_windows,
+                    react_to_scale_factor_changed,
                 )
                     .chain(),
             );
@@ -174,19 +175,3 @@ pub type CreateWindowParams<'w, 's, F = ()> = (
     ResMut<'w, WinitActionHandlers>,
     Res<'w, AccessibilityRequested>,
 );
-
-fn react_to_resize(
-    win: &mut Mut<'_, Window>,
-    size: winit::dpi::PhysicalSize<u32>,
-    window_resized: &mut EventWriter<WindowResized>,
-    window: Entity,
-) {
-    win.resolution
-        .set_physical_resolution(size.width, size.height);
-
-    window_resized.send(WindowResized {
-        window,
-        width: win.width(),
-        height: win.height(),
-    });
-}

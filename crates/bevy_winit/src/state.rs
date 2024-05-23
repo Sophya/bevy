@@ -45,7 +45,7 @@ use crate::accessibility::AccessKitAdapters;
 use crate::converters::convert_winit_theme;
 use crate::system::CachedWindow;
 use crate::{
-    converters, create_windows, react_to_resize, AppSendEvent, CreateWindowParams, UpdateMode,
+    converters, create_windows, AppSendEvent, CreateWindowParams, UpdateMode,
     WinitSettings, WinitWindows,
 };
 
@@ -523,53 +523,20 @@ fn handle_winit_event<T: Event>(
                 }
                 WindowEvent::ScaleFactorChanged {
                     scale_factor,
-                    mut inner_size_writer,
+                    ..
                 } => {
-                    let prior_factor = win.resolution.scale_factor();
-                    win.resolution.set_scale_factor(scale_factor as f32);
-                    // Note: this may be different from new_scale_factor if
-                    // `scale_factor_override` is set to Some(thing)
-                    let new_factor = win.resolution.scale_factor();
-
-                    let mut new_inner_size =
-                        PhysicalSize::new(win.physical_width(), win.physical_height());
+                    let previous_factor = win.resolution.scale_factor();
                     let scale_factor_override = win.resolution.scale_factor_override();
-                    if let Some(forced_factor) = scale_factor_override {
-                        // This window is overriding the OS-suggested DPI, so its physical size
-                        // should be set based on the overriding value. Its logical size already
-                        // incorporates any resize constraints.
-                        let maybe_new_inner_size = LogicalSize::new(win.width(), win.height())
-                            .to_physical::<u32>(forced_factor as f64);
-                        if let Err(err) = inner_size_writer.request_inner_size(new_inner_size) {
-                            warn!("Winit Failed to resize the window: {err}");
-                        } else {
-                            new_inner_size = maybe_new_inner_size;
-                        }
-                    }
-                    let new_logical_width = new_inner_size.width as f32 / new_factor;
-                    let new_logical_height = new_inner_size.height as f32 / new_factor;
-
-                    let width_equal = relative_eq!(win.width(), new_logical_width);
-                    let height_equal = relative_eq!(win.height(), new_logical_height);
-                    win.resolution
-                        .set_physical_resolution(new_inner_size.width, new_inner_size.height);
 
                     app.send_event(WindowBackendScaleFactorChanged {
                         window,
                         scale_factor,
                     });
-                    if scale_factor_override.is_none() && !relative_eq!(new_factor, prior_factor) {
+
+                    if scale_factor_override.is_none() && !relative_eq!(scale_factor as f32, previous_factor) {
                         app.send_event(WindowScaleFactorChanged {
                             window,
                             scale_factor,
-                        });
-                    }
-
-                    if !width_equal || !height_equal {
-                        app.send_event(WindowResized {
-                            window,
-                            width: new_logical_width,
-                            height: new_logical_height,
                         });
                     }
                 }
@@ -695,5 +662,70 @@ fn run_app_update<T: Event>(runner_state: &mut WinitAppRunnerState<T>, app: &mut
 
     if app.plugins_state() == PluginsState::Cleaned {
         app.update();
+    }
+}
+
+pub fn react_to_resize(
+    win: &mut Mut<'_, Window>,
+    size: winit::dpi::PhysicalSize<u32>,
+    window_resized: &mut EventWriter<WindowResized>,
+    window: Entity,
+) {
+    win.resolution
+        .set_physical_resolution(size.width, size.height);
+
+    window_resized.send(WindowResized {
+        window,
+        width: win.width(),
+        height: win.height(),
+    });
+}
+
+pub fn react_to_scale_factor_changed(
+    mut scale_factor_changed: EventReader<WindowBackendScaleFactorChanged>,
+    mut window: Query<&mut Window>,
+    winit_windows: NonSend<WinitWindows>,
+    mut window_resized: EventWriter<WindowResized>,
+) {
+    for evt in scale_factor_changed.read() {
+        let Ok(mut win) = window.get_mut(evt.window) else {
+            continue;
+        };
+
+        win.resolution.set_scale_factor(evt.scale_factor as f32);
+        // Note: this may be different from new_scale_factor if
+        // `scale_factor_override` is set to Some(thing)
+        let new_factor = win.resolution.scale_factor();
+
+        let mut new_inner_size =
+            PhysicalSize::new(win.physical_width(), win.physical_height());
+
+        if let Some(forced_factor) = win.resolution.scale_factor_override() {
+            // This window is overriding the OS-suggested DPI, so its physical size
+            // should be set based on the overriding value. Its logical size already
+            // incorporates any resize constraints.
+            new_inner_size = LogicalSize::new(win.width(), win.height())
+                .to_physical::<u32>(forced_factor as f64);
+n
+            let winit_window = winit_windows.get_window(evt.window).expect("WinitWindow must exist");
+            let _ = winit_window.request_inner_size(new_inner_size);
+        }
+
+        win.resolution
+            .set_physical_resolution(new_inner_size.width, new_inner_size.height);
+
+        let new_logical_width = new_inner_size.width as f32 / new_factor;
+        let new_logical_height = new_inner_size.height as f32 / new_factor;
+
+        let width_equal = relative_eq!(win.width(), new_logical_width);
+        let height_equal = relative_eq!(win.height(), new_logical_height);
+
+        if !width_equal || !height_equal {
+            window_resized.send(WindowResized {
+                window: evt.window,
+                width: new_logical_width,
+                height: new_logical_height,
+            });
+        }
     }
 }
