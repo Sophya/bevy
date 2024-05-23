@@ -43,8 +43,8 @@ fn main() {
             }),
         ))
         .insert_resource(WinitSettings {
-            focused_mode: UpdateMode::continuous(),
-            unfocused_mode: UpdateMode::continuous(),
+            focused_mode: UpdateMode::Continuous,
+            unfocused_mode: UpdateMode::Continuous,
         })
         .add_systems(Startup, setup)
         .add_systems(

@@ -45,8 +45,8 @@ use crate::accessibility::AccessKitAdapters;
 use crate::converters::convert_winit_theme;
 use crate::system::CachedWindow;
 use crate::{
-    converters, create_windows, react_to_resize, AppSendEvent, CreateWindowParams, UpdateFrequency,
-    UpdateMode, WinitSettings, WinitWindows,
+    converters, create_windows, react_to_resize, AppSendEvent, CreateWindowParams, UpdateMode,
+    WinitSettings, WinitWindows,
 };
 
 /// [`AndroidApp`] provides an interface to query the application state as well as monitor events
@@ -89,7 +89,7 @@ impl<T: Event> Default for WinitAppRunnerState<T> {
     fn default() -> Self {
         Self {
             activity_state: UpdateState::NotYetStarted,
-            update_mode: UpdateMode::continuous(),
+            update_mode: UpdateMode::Continuous,
             window_event_received: false,
             device_event_received: false,
             user_event_received: false,
@@ -357,8 +357,8 @@ fn handle_winit_event<T: Event>(
                 runner_state.update_mode = update_mode;
             }
 
-            match update_mode.update_frequency {
-                UpdateFrequency::Continuous => {
+            match update_mode {
+                UpdateMode::Continuous => {
                     // per winit's docs on [Window::is_visible](https://docs.rs/winit/latest/winit/window/struct.Window.html#method.is_visible),
                     // we cannot use the visibility to drive rendering on these platforms
                     // so we cannot discern whether to beneficially use `Poll` or not?
@@ -391,9 +391,9 @@ fn handle_winit_event<T: Event>(
                         runner_state.redraw_requested = true;
                     }
                 }
-                UpdateFrequency::TargetInterval(wait_duration) => {
+                UpdateMode::Reactive { wait, .. } => {
                     // Set the next timeout, starting from the instant before running app.update() to avoid frame delays
-                    if let Some(next) = begin_frame_time.checked_add(wait_duration) {
+                    if let Some(next) = begin_frame_time.checked_add(wait) {
                         if runner_state.wait_elapsed {
                             event_loop.set_control_flow(ControlFlow::WaitUntil(next));
                         }
@@ -668,11 +668,24 @@ fn handle_winit_event<T: Event>(
 }
 
 fn should_update<T: Event>(runner_state: &WinitAppRunnerState<T>, update_mode: UpdateMode) -> bool {
-    let handle_event = {
-        runner_state.wait_elapsed
-            || (runner_state.window_event_received && update_mode.reactivity.react_to_window_events)
-            || (runner_state.device_event_received && update_mode.reactivity.react_to_device_events)
-            || (runner_state.user_event_received && update_mode.reactivity.react_to_user_events)
+    let handle_event = match update_mode {
+        UpdateMode::Continuous => {
+            runner_state.wait_elapsed
+                || runner_state.user_event_received
+                || runner_state.window_event_received
+                || runner_state.device_event_received
+        }
+        UpdateMode::Reactive {
+            react_to_window_events,
+            react_to_device_events,
+            react_to_user_events,
+            ..
+        } => {
+            runner_state.wait_elapsed
+                || (runner_state.window_event_received && react_to_window_events)
+                || (runner_state.device_event_received && react_to_device_events)
+                || (runner_state.user_event_received && react_to_user_events)
+        }
     };
 
     handle_event && runner_state.activity_state.is_active()

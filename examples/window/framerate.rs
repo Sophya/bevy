@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use bevy::{
     prelude::*,
-    winit::{Reactivity, UpdateFrequency, UpdateMode, WinitSettings},
+    winit::{UpdateMode, WinitSettings},
 };
 
 fn main() {
@@ -41,16 +41,14 @@ struct Framerate(pub f64);
 /// Update winit based on the current `Framerate`
 fn update_winit(framerate: Res<Framerate>, mut winit_config: ResMut<WinitSettings>) {
     let max_tick_rate = Duration::from_secs(60);
-    let update_mode = UpdateMode {
-        reactivity: Reactivity::manual(),
-        update_frequency: UpdateFrequency::TargetInterval(
+    *winit_config = WinitSettings {
+        focused_mode: UpdateMode::manual(
             Duration::from_secs_f64(framerate.recip()).min(max_tick_rate),
         ),
-    };
-    *winit_config = WinitSettings {
-        focused_mode: update_mode,
-        unfocused_mode: update_mode,
-    };
+        unfocused_mode: UpdateMode::manual(
+            Duration::from_secs_f64(framerate.recip()).min(max_tick_rate),
+        ),
+    }
 }
 
 /// Everything in this module is for setting up and animating the scene, and is not important to the
