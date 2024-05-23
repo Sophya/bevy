@@ -671,7 +671,6 @@ fn should_update<T: Event>(runner_state: &WinitAppRunnerState<T>, update_mode: U
     let handle_event = match update_mode {
         UpdateMode::Continuous => {
             runner_state.wait_elapsed
-                || runner_state.user_event_received
                 || runner_state.window_event_received
                 || runner_state.device_event_received
         }
