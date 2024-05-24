@@ -9,6 +9,7 @@ use bevy::{
     window::{PresentMode, WindowPlugin},
     winit::WinitSettings,
 };
+use bevy_internal::window::WindowResolution;
 use bevy_internal::winit::{EventLoopProxy, WakeUp};
 
 fn main() {
@@ -27,6 +28,7 @@ fn main() {
             primary_window: Some(Window {
                 // Turn off vsync to maximize CPU/GPU usage
                 present_mode: PresentMode::AutoNoVsync,
+                resolution: WindowResolution::new(800., 640.).with_scale_factor_override(1.),
                 ..default()
             }),
             ..default()

@@ -144,6 +144,7 @@ pub fn winit_runner<T: Event>(mut app: App) {
     // prepare structures to access data in the world
     let mut app_exit_event_reader = ManualEventReader::<AppExit>::default();
     let mut redraw_event_reader = ManualEventReader::<RequestRedraw>::default();
+    let mut window_backend_scale_factor_changed_reader = ManualEventReader::<WindowBackendScaleFactorChanged>::default();
 
     let mut focused_windows_state: SystemState<(Res<WinitSettings>, Query<(Entity, &Window)>)> =
         SystemState::new(&mut app.world);
@@ -167,6 +168,7 @@ pub fn winit_runner<T: Event>(mut app: App) {
             &mut event_writer_system_state,
             &mut focused_windows_state,
             &mut redraw_event_reader,
+            &mut window_backend_scale_factor_changed_reader,
             event,
             event_loop,
         );
@@ -193,6 +195,7 @@ fn handle_winit_event<T: Event>(
     )>,
     focused_windows_state: &mut SystemState<(Res<WinitSettings>, Query<(Entity, &Window)>)>,
     redraw_event_reader: &mut ManualEventReader<RequestRedraw>,
+    window_backend_scale_factor_changed_event_reader: &mut ManualEventReader<WindowBackendScaleFactorChanged>,
     event: WinitEvent<T>,
     event_loop: &EventLoopWindowTarget<T>,
 ) {
@@ -257,9 +260,35 @@ fn handle_winit_event<T: Event>(
 
     match event {
         WinitEvent::AboutToWait => {
-            if let Some(app_redraw_events) = app.world.get_resource::<Events<RequestRedraw>>() {
-                if redraw_event_reader.read(app_redraw_events).last().is_some() {
+            if let Some(redraw_events) = app.world.get_resource::<Events<RequestRedraw>>() {
+                if redraw_event_reader.read(redraw_events).last().is_some() {
                     runner_state.redraw_requested = true;
+                }
+            }
+
+            if let Some(backend_scale_factor_changed_events) = app.world.get_resource::<Events<WindowBackendScaleFactorChanged>>() {
+                let events = window_backend_scale_factor_changed_event_reader.read(backend_scale_factor_changed_events).cloned().collect::<Vec<_>>();
+                if let Some(evt) = events.last()  {
+                    let (mut window_resized, winit_windows, mut windows, _) =
+                        event_writer_system_state.get_mut(&mut app.world);
+
+                    let Some(winit_window) = winit_windows.get_window(evt.window) else {
+                        warn!("Unknown winit Window Id {:?}", evt.window);
+                        return;
+                    };
+
+                    let Ok((mut window, _)) = windows.get_mut(evt.window) else {
+                        warn!("Window {:?} is missing `Window` component", evt.window);
+                        return;
+                    };
+
+                    if let Some(logical_size) = react_to_scale_factor_changed(&mut window, winit_window, evt.scale_factor as f32) {
+                        window_resized.send(WindowResized {
+                            window: evt.window,
+                            width: logical_size.width,
+                            height: logical_size.height,
+                        });
+                    }
                 }
             }
 
@@ -667,7 +696,7 @@ fn run_app_update<T: Event>(runner_state: &mut WinitAppRunnerState<T>, app: &mut
 
 pub fn react_to_resize(
     win: &mut Mut<'_, Window>,
-    size: winit::dpi::PhysicalSize<u32>,
+    size: PhysicalSize<u32>,
     window_resized: &mut EventWriter<WindowResized>,
     window: Entity,
 ) {
@@ -682,50 +711,36 @@ pub fn react_to_resize(
 }
 
 pub fn react_to_scale_factor_changed(
-    mut scale_factor_changed: EventReader<WindowBackendScaleFactorChanged>,
-    mut window: Query<&mut Window>,
-    winit_windows: NonSend<WinitWindows>,
-    mut window_resized: EventWriter<WindowResized>,
-) {
-    for evt in scale_factor_changed.read() {
-        let Ok(mut win) = window.get_mut(evt.window) else {
-            continue;
-        };
+    window: &mut Mut<'_, Window>,
+    winit_window: &winit::window::Window,
+    scale_factor: f32,
+) -> Option<LogicalSize<f32>> {
+    window.resolution.set_scale_factor(scale_factor);
+    // Note: this may be different from new_scale_factor if
+    // `scale_factor_override` is set to Some(thing)
+    let new_factor = window.resolution.scale_factor();
 
-        win.resolution.set_scale_factor(evt.scale_factor as f32);
-        // Note: this may be different from new_scale_factor if
-        // `scale_factor_override` is set to Some(thing)
-        let new_factor = win.resolution.scale_factor();
+    let mut new_physical_size =
+        PhysicalSize::new(window.physical_width(), window.physical_height());
 
-        let mut new_inner_size =
-            PhysicalSize::new(win.physical_width(), win.physical_height());
+    if let Some(forced_factor) = window.resolution.scale_factor_override() {
+        // This window is overriding the OS-suggested DPI, so its physical size
+        // should be set based on the overriding value. Its logical size already
+        // incorporates any resize constraints.
+        new_physical_size = LogicalSize::new(window.width(), window.height())
+            .to_physical::<u32>(forced_factor as f64);
 
-        if let Some(forced_factor) = win.resolution.scale_factor_override() {
-            // This window is overriding the OS-suggested DPI, so its physical size
-            // should be set based on the overriding value. Its logical size already
-            // incorporates any resize constraints.
-            new_inner_size = LogicalSize::new(win.width(), win.height())
-                .to_physical::<u32>(forced_factor as f64);
-n
-            let winit_window = winit_windows.get_window(evt.window).expect("WinitWindow must exist");
-            let _ = winit_window.request_inner_size(new_inner_size);
-        }
-
-        win.resolution
-            .set_physical_resolution(new_inner_size.width, new_inner_size.height);
-
-        let new_logical_width = new_inner_size.width as f32 / new_factor;
-        let new_logical_height = new_inner_size.height as f32 / new_factor;
-
-        let width_equal = relative_eq!(win.width(), new_logical_width);
-        let height_equal = relative_eq!(win.height(), new_logical_height);
-
-        if !width_equal || !height_equal {
-            window_resized.send(WindowResized {
-                window: evt.window,
-                width: new_logical_width,
-                height: new_logical_height,
-            });
-        }
+        let _ = winit_window.request_inner_size(new_physical_size);
     }
+
+    window.resolution
+        .set_physical_resolution(new_physical_size.width, new_physical_size.height);
+
+    let new_logical_size = new_physical_size.to_logical(new_factor as f64);
+
+    if !relative_eq!(window.width(), new_logical_size.width) || !relative_eq!(window.height(), new_logical_size.height) {
+        return Some(new_logical_size);
+    }
+
+    None
 }

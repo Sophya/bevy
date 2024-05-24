@@ -21,7 +21,7 @@ pub use winit_windows::*;
 
 use bevy_app::{App, Last, Plugin};
 use bevy_ecs::prelude::*;
-use bevy_window::{exit_on_all_closed, Window, WindowCreated, WindowResized};
+use bevy_window::{exit_on_all_closed, Window, WindowCreated};
 #[cfg(target_os = "android")]
 use bevy_window::{PrimaryWindow, RawHandleWrapper};
 
@@ -32,7 +32,7 @@ use winit::event_loop::EventLoopBuilder;
 
 use crate::accessibility::{AccessKitAdapters, AccessKitPlugin, WinitActionHandlers};
 
-use crate::state::{react_to_scale_factor_changed, winit_runner};
+use crate::state::winit_runner;
 
 /// [`AndroidApp`] provides an interface to query the application state as well as monitor events
 /// (for example lifecycle and input events).
@@ -108,7 +108,6 @@ impl<T: Event> Plugin for WinitPlugin<T> {
                     // so we don't need to care about its ordering relative to `changed_windows`
                     changed_windows.ambiguous_with(exit_on_all_closed),
                     despawn_windows,
-                    react_to_scale_factor_changed,
                 )
                     .chain(),
             );

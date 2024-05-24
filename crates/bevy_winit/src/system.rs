@@ -25,6 +25,7 @@ use crate::{
     },
     get_best_videomode, get_fitting_videomode, CreateWindowParams, WinitWindows,
 };
+use crate::state::react_to_resize;
 
 /// Creates new windows on the [`winit`] backend for each entity with a newly-added
 /// [`Window`] component.
@@ -171,7 +172,7 @@ pub(crate) fn changed_windows(
                 window.resolution.physical_height(),
             );
             if let Some(size_now) = winit_window.request_inner_size(physical_size) {
-                crate::react_to_resize(&mut window, size_now, &mut window_resized, entity);
+                react_to_resize(&mut window, size_now, &mut window_resized, entity);
             }
         }
 
