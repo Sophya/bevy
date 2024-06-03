@@ -215,46 +215,6 @@ fn handle_winit_event<T: Event>(
     create_windows(event_loop, create_window.get_mut(&mut app.world));
     create_window.apply(&mut app.world);
 
-    #[cfg(target_arch = "wasm32")]
-    {
-        use bevy_window::WindowGlContextLost;
-        use wasm_bindgen::JsCast;
-        use winit::platform::web::WindowExtWebSys;
-
-        fn get_gl_context(
-            window: &winit::window::Window,
-        ) -> Option<web_sys::WebGl2RenderingContext> {
-            if let Some(canvas) = window.canvas() {
-                let context = canvas.get_context("webgl2").ok()??;
-
-                Some(context.dyn_into::<web_sys::WebGl2RenderingContext>().ok()?)
-            } else {
-                None
-            }
-        }
-
-        fn has_gl_context(window: &winit::window::Window) -> bool {
-            get_gl_context(window).map_or(false, |ctx| !ctx.is_context_lost())
-        }
-
-        let (_, windows) = focused_windows_state.get(&app.world);
-
-        if let Some((entity, _)) = windows.iter().next() {
-            let winit_windows = app.world.non_send_resource::<WinitWindows>();
-            let window = winit_windows.get_window(entity).expect("Window must exist");
-
-            if !has_gl_context(&window) {
-                app.world.send_event(WindowGlContextLost { window: entity });
-
-                // Pauses sub-apps to stop WGPU from crashing when there's no OpenGL context.
-                // Ensures that the rest of the systems in the main app keep running (i.e. physics).
-                app.pause_sub_apps();
-            } else {
-                app.resume_sub_apps();
-            }
-        }
-    }
-
     match event {
         WinitEvent::AboutToWait => {
             if let Some(app_redraw_events) = app.world.get_resource::<Events<RequestRedraw>>() {
@@ -340,7 +300,10 @@ fn handle_winit_event<T: Event>(
 
             if should_update {
                 // Not redrawing, but the timeout elapsed.
+                #[cfg(not(target_arch = "wasm32"))]
                 run_app_update(runner_state, app);
+                #[cfg(target_arch = "wasm32")]
+                run_app_update(runner_state, app, focused_windows_state);
 
                 // Running the app may have changed the WinitSettings resource, so we have to re-extract it.
                 let (config, windows) = focused_windows_state.get(&app.world);
@@ -690,10 +653,60 @@ fn should_update<T: Event>(runner_state: &WinitAppRunnerState<T>, update_mode: U
     handle_event && runner_state.activity_state.is_active()
 }
 
-fn run_app_update<T: Event>(runner_state: &mut WinitAppRunnerState<T>, app: &mut App) {
+fn run_app_update<T: Event>(
+    runner_state: &mut WinitAppRunnerState<T>,
+    app: &mut App,
+    #[cfg(target_arch = "wasm32")] focused_windows_state: &mut SystemState<(
+        Res<WinitSettings>,
+        Query<(Entity, &Window)>,
+    )>,
+) {
     runner_state.reset_on_update();
 
     if app.plugins_state() == PluginsState::Cleaned {
+        #[cfg(target_arch = "wasm32")]
+        pause_sub_apps_if_webgl_context_lost(app, focused_windows_state);
         app.update();
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn pause_sub_apps_if_webgl_context_lost(
+    app: &mut App,
+    focused_windows_state: &mut SystemState<(Res<WinitSettings>, Query<(Entity, &Window)>)>,
+) {
+    use bevy_window::WindowGlContextLost;
+    use wasm_bindgen::JsCast;
+    use winit::platform::web::WindowExtWebSys;
+
+    fn get_gl_context(window: &winit::window::Window) -> Option<web_sys::WebGl2RenderingContext> {
+        if let Some(canvas) = window.canvas() {
+            let context = canvas.get_context("webgl2").ok()??;
+
+            Some(context.dyn_into::<web_sys::WebGl2RenderingContext>().ok()?)
+        } else {
+            None
+        }
+    }
+
+    fn has_gl_context(window: &winit::window::Window) -> bool {
+        get_gl_context(window).map_or(false, |ctx| !ctx.is_context_lost())
+    }
+
+    let (_, windows) = focused_windows_state.get(&app.world);
+
+    if let Some((entity, _)) = windows.iter().next() {
+        let winit_windows = app.world.non_send_resource::<WinitWindows>();
+        let window = winit_windows.get_window(entity).expect("Window must exist");
+
+        if !has_gl_context(&window) {
+            app.world.send_event(WindowGlContextLost { window: entity });
+
+            // Pauses sub-apps to stop WGPU from crashing when there's no OpenGL context.
+            // Ensures that the rest of the systems in the main app keep running (i.e. physics).
+            app.pause_sub_apps();
+        } else {
+            app.resume_sub_apps();
+        }
     }
 }
