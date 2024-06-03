@@ -78,7 +78,7 @@ pub struct App {
     /// This is initially set to [`Main`].
     pub main_schedule_label: InternedScheduleLabel,
     sub_apps: HashMap<InternedAppLabel, SubApp>,
-    run_sub_apps: bool,
+    paused_sub_apps: HashSet<InternedAppLabel>,
     plugin_registry: Vec<Box<dyn Plugin>>,
     plugin_name_added: HashSet<String>,
     /// A private counter to prevent incorrect calls to `App::run()` from `Plugin::build()`
@@ -236,7 +236,7 @@ impl App {
             world,
             runner: Box::new(run_once),
             sub_apps: HashMap::default(),
-            run_sub_apps: true,
+            paused_sub_apps: HashSet::default(),
             plugin_registry: Vec::default(),
             plugin_name_added: Default::default(),
             main_schedule_label: Main.intern(),
@@ -264,13 +264,15 @@ impl App {
             let _bevy_main_update_span = info_span!("main app").entered();
             self.world.run_schedule(self.main_schedule_label);
         }
-        if self.run_sub_apps {
-            for (_label, sub_app) in &mut self.sub_apps {
-                #[cfg(feature = "trace")]
-                let _sub_app_span = info_span!("sub app", name = ?_label).entered();
-                sub_app.extract(&mut self.world);
-                sub_app.run();
+        for (label, sub_app) in &mut self.sub_apps {
+            if self.paused_sub_apps.contains(label) {
+                continue;
             }
+
+            #[cfg(feature = "trace")]
+            let _sub_app_span = info_span!("sub app", name = ?_label).entered();
+            sub_app.extract(&mut self.world);
+            sub_app.run();
         }
 
         self.world.clear_trackers();
@@ -860,13 +862,13 @@ impl App {
     }
 
     /// Resumes sub apps
-    pub fn resume_sub_apps(&mut self) {
-        self.run_sub_apps = true;
+    pub fn resume_sub_app(&mut self, sub_app: AppLabel) {
+        self.paused_sub_apps.remove(&sub_app);
     }
 
     /// Pauses sub apps from running.
-    pub fn pause_sub_apps(&mut self) {
-        self.run_sub_apps = false;
+    pub fn pause_sub_app(&mut self, sub_app: AppLabel) {
+        self.paused_sub_apps.insert(sub_app);
     }
 
     /// Adds a new `schedule` to the [`App`].

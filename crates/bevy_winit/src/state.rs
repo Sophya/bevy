@@ -704,9 +704,14 @@ fn pause_sub_apps_if_webgl_context_lost(
 
             // Pauses sub-apps to stop WGPU from crashing when there's no OpenGL context.
             // Ensures that the rest of the systems in the main app keep running (i.e. physics).
-            app.pause_sub_apps();
+            // TODO(@Maximetinu): this is pseudo-code, but it's just to showcase the main idea. The blockers are:
+            // - label is not exposed like that, it needs the real render_app instance
+            // - this introduces a dependency between bevy_winit and bevy_render, only for this, which is not good
+            // - it is smelly that this should be responsibility of the render app itself, not of bevy_winit
+            // The previous solution of pausing all the sub apps is not a general solution: other Bevy users could even be defining their own sub apps
+            app.pause_sub_app(RenderApp::label());
         } else {
-            app.resume_sub_apps();
+            app.resume_sub_app(RenderApp::label());
         }
     }
 }
