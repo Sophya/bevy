@@ -7,15 +7,19 @@ use bevy::{
     prelude::*,
     utils::Duration,
     window::{PresentMode, WindowPlugin},
-    winit::WinitSettings,
+    winit::{WinitEvent, WinitSettings},
 };
 use bevy_internal::window::WindowResolution;
-use bevy_internal::winit::{EventLoopProxy, WakeUp};
+use bevy_internal::winit::{EventLoopProxy, WakeUp, WinitEventFilter};
 
 fn main() {
+    let winit_event_filter =
+        WinitEventFilter::<WakeUp>::new(|evt, _| matches!(evt, WinitEvent::WindowEvent { .. }));
+
     App::new()
         // Continuous rendering for games - bevy's default.
         .insert_resource(WinitSettings::game())
+        .insert_non_send_resource(winit_event_filter)
         // Power-saving reactive rendering for applications.
         .insert_resource(WinitSettings::desktop_app())
         // You can also customize update behavior with the fields of [`WinitConfig`]

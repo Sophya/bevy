@@ -10,6 +10,7 @@ mod converters;
 mod state;
 mod system;
 mod winit_config;
+mod winit_event_filter;
 mod winit_windows;
 
 use bevy_a11y::AccessibilityRequested;
@@ -17,6 +18,7 @@ use std::marker::PhantomData;
 pub use system::create_windows;
 use system::{changed_windows, despawn_windows};
 pub use winit_config::*;
+pub use winit_event_filter::*;
 pub use winit_windows::*;
 
 use bevy_app::{App, Last, Plugin};
@@ -28,6 +30,7 @@ use bevy_window::{PrimaryWindow, RawHandleWrapper};
 #[cfg(target_os = "android")]
 pub use winit::platform::android::activity as android_activity;
 
+pub use winit::event::Event as WinitEvent;
 use winit::event_loop::EventLoopBuilder;
 
 use crate::accessibility::{AccessKitAdapters, AccessKitPlugin, WinitActionHandlers};

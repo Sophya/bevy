@@ -18,6 +18,7 @@ use winit::{
     event_loop::EventLoopWindowTarget,
 };
 
+use crate::state::react_to_resize;
 use crate::{
     converters::{
         self, convert_enabled_buttons, convert_window_level, convert_window_theme,
@@ -25,7 +26,6 @@ use crate::{
     },
     get_best_videomode, get_fitting_videomode, CreateWindowParams, WinitWindows,
 };
-use crate::state::react_to_resize;
 
 /// Creates new windows on the [`winit`] backend for each entity with a newly-added
 /// [`Window`] component.

@@ -73,11 +73,11 @@ pub enum UpdateMode {
         /// **Note:** This has no upper limit.
         /// The [`App`](bevy_app::App) will wait indefinitely if you set this to [`Duration::MAX`].
         wait: Duration,
-        /// Reacts to window events, that will wake up the loop if it's in a wait wtate
+        /// Reacts to window events, that will wake up the loop if it's in a wait state
         react_to_window_events: bool,
-        /// Reacts to device events, that will wake up the loop if it's in a wait wtate
+        /// Reacts to device events, that will wake up the loop if it's in a wait state
         react_to_device_events: bool,
-        /// Reacts to user events, that will wake up the loop if it's in a wait wtate
+        /// Reacts to user events, that will wake up the loop if it's in a wait state
         react_to_user_events: bool,
     },
 }
