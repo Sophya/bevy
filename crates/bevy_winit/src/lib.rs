@@ -10,6 +10,7 @@ mod converters;
 mod state;
 mod system;
 mod winit_config;
+mod winit_event_filter;
 mod winit_windows;
 
 use bevy_a11y::AccessibilityRequested;
@@ -17,17 +18,19 @@ use std::marker::PhantomData;
 pub use system::create_windows;
 use system::{changed_windows, despawn_windows};
 pub use winit_config::*;
+pub use winit_event_filter::*;
 pub use winit_windows::*;
 
 use bevy_app::{App, Last, Plugin};
 use bevy_ecs::prelude::*;
-use bevy_window::{exit_on_all_closed, Window, WindowCreated, WindowResized};
+use bevy_window::{exit_on_all_closed, Window, WindowCreated};
 #[cfg(target_os = "android")]
 use bevy_window::{PrimaryWindow, RawHandleWrapper};
 
 #[cfg(target_os = "android")]
 pub use winit::platform::android::activity as android_activity;
 
+pub use winit::event::Event as WinitEvent;
 use winit::event_loop::EventLoopBuilder;
 
 use crate::accessibility::{AccessKitAdapters, AccessKitPlugin, WinitActionHandlers};
@@ -174,19 +177,3 @@ pub type CreateWindowParams<'w, 's, F = ()> = (
     ResMut<'w, WinitActionHandlers>,
     Res<'w, AccessibilityRequested>,
 );
-
-fn react_to_resize(
-    win: &mut Mut<'_, Window>,
-    size: winit::dpi::PhysicalSize<u32>,
-    window_resized: &mut EventWriter<WindowResized>,
-    window: Entity,
-) {
-    win.resolution
-        .set_physical_resolution(size.width, size.height);
-
-    window_resized.send(WindowResized {
-        window,
-        width: win.width(),
-        height: win.height(),
-    });
-}

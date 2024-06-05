@@ -7,7 +7,6 @@
 
 use approx::relative_eq;
 use bevy_utils::Instant;
-use std::marker::PhantomData;
 use winit::dpi::{LogicalSize, PhysicalSize};
 
 use bevy_app::{App, AppExit, PluginsState};
@@ -45,7 +44,7 @@ use crate::accessibility::AccessKitAdapters;
 use crate::converters::convert_winit_theme;
 use crate::system::CachedWindow;
 use crate::{
-    converters, create_windows, react_to_resize, AppSendEvent, CreateWindowParams, UpdateMode,
+    converters, create_windows, AppSendEvent, CreateWindowParams, UpdateMode, WinitEventFilter,
     WinitSettings, WinitWindows,
 };
 
@@ -62,26 +61,29 @@ struct WinitAppRunnerState<T: Event> {
     activity_state: UpdateState,
     /// Current update mode of the app.
     update_mode: UpdateMode,
-    /// Is `true` if a new [`WindowEvent`] has been received since the last update.
-    window_event_received: bool,
-    /// Is `true` if a new [`DeviceEvent`] has been received since the last update.
-    device_event_received: bool,
-    /// Is `true` if a new [`T`] event has been received since the last update.
-    user_event_received: bool,
+    /// Filter to handle events
+    event_filter: WinitEventFilter<T>,
+    /// Number of "forced" updates to trigger on application start
+    startup_forced_updates: u32,
     /// Is `true` if the app has requested a redraw since the last update.
     redraw_requested: bool,
     /// Is `true` if enough time has elapsed since `last_update` to run another update.
     wait_elapsed: bool,
-    /// Number of "forced" updates to trigger on application start
-    startup_forced_updates: u32,
-    _marker: PhantomData<T>,
+    /// Is `true` if a filtered eventhas been received since the last update.
+    event_received: bool,
 }
 
 impl<T: Event> WinitAppRunnerState<T> {
     fn reset_on_update(&mut self) {
-        self.window_event_received = false;
-        self.device_event_received = false;
-        self.user_event_received = false;
+        self.event_received;
+    }
+
+    fn should_update(&self) -> bool {
+        (self.wait_elapsed || self.event_received) && self.activity_state.is_active()
+    }
+
+    fn handle_event(&mut self, event: &WinitEvent<T>, update_mode: UpdateMode) {
+        self.event_received |= self.event_filter.handle(event, update_mode);
     }
 }
 
@@ -90,14 +92,12 @@ impl<T: Event> Default for WinitAppRunnerState<T> {
         Self {
             activity_state: UpdateState::NotYetStarted,
             update_mode: UpdateMode::Continuous,
-            window_event_received: false,
-            device_event_received: false,
-            user_event_received: false,
             redraw_requested: false,
             wait_elapsed: false,
             // 3 seems to be enough, 5 is a safe margin
             startup_forced_updates: 5,
-            _marker: PhantomData,
+            event_filter: WinitEventFilter::default(),
+            event_received: false,
         }
     }
 }
@@ -141,9 +141,15 @@ pub fn winit_runner<T: Event>(mut app: App) {
 
     let mut runner_state = WinitAppRunnerState::<T>::default();
 
+    if let Some(filter) = app.world.remove_non_send_resource::<WinitEventFilter<T>>() {
+        runner_state.event_filter = filter;
+    }
+
     // prepare structures to access data in the world
     let mut app_exit_event_reader = ManualEventReader::<AppExit>::default();
     let mut redraw_event_reader = ManualEventReader::<RequestRedraw>::default();
+    let mut window_backend_scale_factor_changed_reader =
+        ManualEventReader::<WindowBackendScaleFactorChanged>::default();
 
     let mut focused_windows_state: SystemState<(Res<WinitSettings>, Query<(Entity, &Window)>)> =
         SystemState::new(&mut app.world);
@@ -167,6 +173,7 @@ pub fn winit_runner<T: Event>(mut app: App) {
             &mut event_writer_system_state,
             &mut focused_windows_state,
             &mut redraw_event_reader,
+            &mut window_backend_scale_factor_changed_reader,
             event,
             event_loop,
         );
@@ -193,6 +200,9 @@ fn handle_winit_event<T: Event>(
     )>,
     focused_windows_state: &mut SystemState<(Res<WinitSettings>, Query<(Entity, &Window)>)>,
     redraw_event_reader: &mut ManualEventReader<RequestRedraw>,
+    window_backend_scale_factor_changed_event_reader: &mut ManualEventReader<
+        WindowBackendScaleFactorChanged,
+    >,
     event: WinitEvent<T>,
     event_loop: &EventLoopWindowTarget<T>,
 ) {
@@ -214,6 +224,12 @@ fn handle_winit_event<T: Event>(
     // (even if app did not update, some may have been created by plugin setup)
     create_windows(event_loop, create_window.get_mut(&mut app.world));
     create_window.apply(&mut app.world);
+
+    let (config, windows) = focused_windows_state.get(&app.world);
+    let focused = windows.iter().any(|(_, window)| window.focused);
+    let mut update_mode = config.update_mode(focused);
+
+    runner_state.handle_event(&event, update_mode);
 
     #[cfg(target_arch = "wasm32")]
     {
@@ -257,16 +273,49 @@ fn handle_winit_event<T: Event>(
 
     match event {
         WinitEvent::AboutToWait => {
-            if let Some(app_redraw_events) = app.world.get_resource::<Events<RequestRedraw>>() {
-                if redraw_event_reader.read(app_redraw_events).last().is_some() {
+            if let Some(redraw_events) = app.world.get_resource::<Events<RequestRedraw>>() {
+                if redraw_event_reader.read(redraw_events).last().is_some() {
                     runner_state.redraw_requested = true;
                 }
             }
 
-            let (config, windows) = focused_windows_state.get(&app.world);
-            let focused = windows.iter().any(|(_, window)| window.focused);
-            let mut update_mode = config.update_mode(focused);
-            let mut should_update = should_update(runner_state, update_mode);
+            if let Some(backend_scale_factor_changed_events) = app
+                .world
+                .get_resource::<Events<WindowBackendScaleFactorChanged>>()
+            {
+                let events = window_backend_scale_factor_changed_event_reader
+                    .read(backend_scale_factor_changed_events)
+                    .cloned()
+                    .collect::<Vec<_>>();
+                if let Some(evt) = events.last() {
+                    let (mut window_resized, winit_windows, mut windows, _) =
+                        event_writer_system_state.get_mut(&mut app.world);
+
+                    let Some(winit_window) = winit_windows.get_window(evt.window) else {
+                        warn!("Unknown winit window Id {:?}", evt.window);
+                        return;
+                    };
+
+                    let Ok((mut window, _)) = windows.get_mut(evt.window) else {
+                        warn!("Window {:?} is missing `Window` component", evt.window);
+                        return;
+                    };
+
+                    if let Some(logical_size) = react_to_scale_factor_changed(
+                        &mut window,
+                        winit_window,
+                        evt.scale_factor as f32,
+                    ) {
+                        window_resized.send(WindowResized {
+                            window: evt.window,
+                            width: logical_size.width,
+                            height: logical_size.height,
+                        });
+                    }
+                }
+            }
+
+            let mut should_update = runner_state.should_update();
 
             if runner_state.startup_forced_updates > 0 {
                 runner_state.startup_forced_updates -= 1;
@@ -427,7 +476,7 @@ fn handle_winit_event<T: Event>(
                 event_writer_system_state.get_mut(&mut app.world);
 
             let Some(window) = winit_windows.get_window_entity(window_id) else {
-                warn!("Skipped event {event:?} for unknown winit Window Id {window_id:?}");
+                warn!("Skipped event {event:?} for unknown winit window Id {window_id:?}");
                 return;
             };
 
@@ -443,8 +492,6 @@ fn handle_winit_event<T: Event>(
                     adapter.process_event(winit_window, &event);
                 }
             }
-
-            runner_state.window_event_received = true;
 
             match event {
                 WindowEvent::Resized(size) => {
@@ -521,55 +568,21 @@ fn handle_winit_event<T: Event>(
                         .to_logical(win.resolution.scale_factor() as f64);
                     app.send_event(converters::convert_touch_input(touch, location, window));
                 }
-                WindowEvent::ScaleFactorChanged {
-                    scale_factor,
-                    mut inner_size_writer,
-                } => {
-                    let prior_factor = win.resolution.scale_factor();
-                    win.resolution.set_scale_factor(scale_factor as f32);
-                    // Note: this may be different from new_scale_factor if
-                    // `scale_factor_override` is set to Some(thing)
-                    let new_factor = win.resolution.scale_factor();
-
-                    let mut new_inner_size =
-                        PhysicalSize::new(win.physical_width(), win.physical_height());
+                WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                    let previous_factor = win.resolution.scale_factor();
                     let scale_factor_override = win.resolution.scale_factor_override();
-                    if let Some(forced_factor) = scale_factor_override {
-                        // This window is overriding the OS-suggested DPI, so its physical size
-                        // should be set based on the overriding value. Its logical size already
-                        // incorporates any resize constraints.
-                        let maybe_new_inner_size = LogicalSize::new(win.width(), win.height())
-                            .to_physical::<u32>(forced_factor as f64);
-                        if let Err(err) = inner_size_writer.request_inner_size(new_inner_size) {
-                            warn!("Winit Failed to resize the window: {err}");
-                        } else {
-                            new_inner_size = maybe_new_inner_size;
-                        }
-                    }
-                    let new_logical_width = new_inner_size.width as f32 / new_factor;
-                    let new_logical_height = new_inner_size.height as f32 / new_factor;
-
-                    let width_equal = relative_eq!(win.width(), new_logical_width);
-                    let height_equal = relative_eq!(win.height(), new_logical_height);
-                    win.resolution
-                        .set_physical_resolution(new_inner_size.width, new_inner_size.height);
 
                     app.send_event(WindowBackendScaleFactorChanged {
                         window,
                         scale_factor,
                     });
-                    if scale_factor_override.is_none() && !relative_eq!(new_factor, prior_factor) {
+
+                    if scale_factor_override.is_none()
+                        && !relative_eq!(scale_factor as f32, previous_factor)
+                    {
                         app.send_event(WindowScaleFactorChanged {
                             window,
                             scale_factor,
-                        });
-                    }
-
-                    if !width_equal || !height_equal {
-                        app.send_event(WindowResized {
-                            window,
-                            width: new_logical_width,
-                            height: new_logical_height,
                         });
                     }
                 }
@@ -632,7 +645,6 @@ fn handle_winit_event<T: Event>(
             }
         }
         WinitEvent::DeviceEvent { event, .. } => {
-            runner_state.device_event_received = true;
             if let DeviceEvent::MouseMotion { delta: (x, y) } = event {
                 let delta = Vec2::new(x as f32, y as f32);
                 app.send_event(MouseMotion { delta });
@@ -652,8 +664,6 @@ fn handle_winit_event<T: Event>(
             runner_state.activity_state = UpdateState::WillResume;
         }
         WinitEvent::UserEvent(event) => {
-            runner_state.user_event_received = true;
-
             app.world.send_event(event);
         }
         _ => (),
@@ -667,33 +677,65 @@ fn handle_winit_event<T: Event>(
     }
 }
 
-fn should_update<T: Event>(runner_state: &WinitAppRunnerState<T>, update_mode: UpdateMode) -> bool {
-    let handle_event = match update_mode {
-        UpdateMode::Continuous => {
-            runner_state.wait_elapsed
-                || runner_state.window_event_received
-                || runner_state.device_event_received
-        }
-        UpdateMode::Reactive {
-            react_to_window_events,
-            react_to_device_events,
-            react_to_user_events,
-            ..
-        } => {
-            runner_state.wait_elapsed
-                || (runner_state.window_event_received && react_to_window_events)
-                || (runner_state.device_event_received && react_to_device_events)
-                || (runner_state.user_event_received && react_to_user_events)
-        }
-    };
-
-    handle_event && runner_state.activity_state.is_active()
-}
-
 fn run_app_update<T: Event>(runner_state: &mut WinitAppRunnerState<T>, app: &mut App) {
     runner_state.reset_on_update();
 
     if app.plugins_state() == PluginsState::Cleaned {
         app.update();
     }
+}
+
+pub fn react_to_resize(
+    win: &mut Mut<'_, Window>,
+    size: PhysicalSize<u32>,
+    window_resized: &mut EventWriter<WindowResized>,
+    window: Entity,
+) {
+    win.resolution
+        .set_physical_resolution(size.width, size.height);
+
+    window_resized.send(WindowResized {
+        window,
+        width: win.width(),
+        height: win.height(),
+    });
+}
+
+pub fn react_to_scale_factor_changed(
+    window: &mut Mut<'_, Window>,
+    winit_window: &winit::window::Window,
+    scale_factor: f32,
+) -> Option<LogicalSize<f32>> {
+    window.resolution.set_scale_factor(scale_factor);
+    // Note: this may be different from new_scale_factor if
+    // `scale_factor_override` is set to Some(thing)
+    let mut new_factor = window.resolution.scale_factor();
+
+    let mut new_physical_size =
+        PhysicalSize::new(window.physical_width(), window.physical_height());
+
+    if let Some(forced_factor) = window.resolution.scale_factor_override() {
+        // This window is overriding the OS-suggested DPI, so its physical size
+        // should be set based on the overriding value. Its logical size already
+        // incorporates any resize constraints.
+        new_physical_size = LogicalSize::new(window.width(), window.height())
+            .to_physical::<u32>(forced_factor as f64);
+
+        let _ = winit_window.request_inner_size(new_physical_size);
+        new_factor = forced_factor;
+    }
+
+    window
+        .resolution
+        .set_physical_resolution(new_physical_size.width, new_physical_size.height);
+
+    let new_logical_size = new_physical_size.to_logical(new_factor as f64);
+
+    if !relative_eq!(window.width(), new_logical_size.width)
+        || !relative_eq!(window.height(), new_logical_size.height)
+    {
+        return Some(new_logical_size);
+    }
+
+    None
 }

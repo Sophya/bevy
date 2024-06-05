@@ -18,6 +18,7 @@ use winit::{
     event_loop::EventLoopWindowTarget,
 };
 
+use crate::state::react_to_resize;
 use crate::{
     converters::{
         self, convert_enabled_buttons, convert_window_level, convert_window_theme,
@@ -171,7 +172,7 @@ pub(crate) fn changed_windows(
                 window.resolution.physical_height(),
             );
             if let Some(size_now) = winit_window.request_inner_size(physical_size) {
-                crate::react_to_resize(&mut window, size_now, &mut window_resized, entity);
+                react_to_resize(&mut window, size_now, &mut window_resized, entity);
             }
         }
 
