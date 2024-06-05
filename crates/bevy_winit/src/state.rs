@@ -69,7 +69,7 @@ struct WinitAppRunnerState<T: Event> {
     redraw_requested: bool,
     /// Is `true` if enough time has elapsed since `last_update` to run another update.
     wait_elapsed: bool,
-    /// Is `true` if a filtered eventhas been received since the last update.
+    /// Is `true` if a filtered event has been received since the last update.
     event_received: bool,
 }
 
