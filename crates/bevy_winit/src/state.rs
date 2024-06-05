@@ -75,7 +75,7 @@ struct WinitAppRunnerState<T: Event> {
 
 impl<T: Event> WinitAppRunnerState<T> {
     fn reset_on_update(&mut self) {
-        self.event_received;
+        self.event_received = false;
     }
 
     fn should_update(&self) -> bool {
