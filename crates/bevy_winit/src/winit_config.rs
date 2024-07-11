@@ -73,6 +73,12 @@ pub enum UpdateMode {
         /// **Note:** This has no upper limit.
         /// The [`App`](bevy_app::App) will wait indefinitely if you set this to [`Duration::MAX`].
         wait: Duration,
+        /*
+           TODO(@Maximetinu): since we introduced the `WinitEventFilter`, these booleans are not used.
+           We should either remove them, or give them use.
+           A possible use could be to implement the default WinitEventFilter taking these into account.
+           That way, using the default `WinitEventFilter` would keep backwards compatibility with any previous code using `WinitSettings`,
+        */
         /// Reacts to window events, that will wake up the loop if it's in a wait state
         react_to_window_events: bool,
         /// Reacts to device events, that will wake up the loop if it's in a wait state
@@ -82,6 +88,7 @@ pub enum UpdateMode {
     },
 }
 
+// TODO(@Maximetinu): removing these booleans also render these constructors redundant
 impl UpdateMode {
     /// React to window, device and user events
     pub fn reactive(wait: Duration) -> UpdateMode {
