@@ -56,13 +56,11 @@ pub static ANDROID_APP: std::sync::OnceLock<android_activity::AndroidApp> =
 
 /// Persistent state that is used to run the [`App`] according to the current
 /// [`UpdateMode`].
-struct WinitAppRunnerState<T: Event> {
+struct WinitAppRunnerState {
     /// Current activity state of the app.
     activity_state: UpdateState,
     /// Current update mode of the app.
     update_mode: UpdateMode,
-    /// Filter to handle events
-    event_filter: WinitEventFilter<T>,
     /// Number of "forced" updates to trigger on application start
     startup_forced_updates: u32,
     /// Is `true` if the app has requested a redraw since the last update.
@@ -73,7 +71,7 @@ struct WinitAppRunnerState<T: Event> {
     event_received: bool,
 }
 
-impl<T: Event> WinitAppRunnerState<T> {
+impl WinitAppRunnerState {
     fn reset_on_update(&mut self) {
         self.event_received = false;
     }
@@ -81,13 +79,9 @@ impl<T: Event> WinitAppRunnerState<T> {
     fn should_update(&self) -> bool {
         (self.wait_elapsed || self.event_received) && self.activity_state.is_active()
     }
-
-    fn handle_event(&mut self, event: &WinitEvent<T>, update_mode: UpdateMode) {
-        self.event_received |= self.event_filter.handle(event, update_mode);
-    }
 }
 
-impl<T: Event> Default for WinitAppRunnerState<T> {
+impl Default for WinitAppRunnerState {
     fn default() -> Self {
         Self {
             activity_state: UpdateState::NotYetStarted,
@@ -96,7 +90,6 @@ impl<T: Event> Default for WinitAppRunnerState<T> {
             wait_elapsed: false,
             // 3 seems to be enough, 5 is a safe margin
             startup_forced_updates: 5,
-            event_filter: WinitEventFilter::default(),
             event_received: false,
         }
     }
@@ -139,11 +132,7 @@ pub fn winit_runner<T: Event>(mut app: App) {
     app.world
         .insert_non_send_resource(event_loop.create_proxy());
 
-    let mut runner_state = WinitAppRunnerState::<T>::default();
-
-    if let Some(filter) = app.world.remove_non_send_resource::<WinitEventFilter<T>>() {
-        runner_state.event_filter = filter;
-    }
+    let mut runner_state = WinitAppRunnerState::default();
 
     // prepare structures to access data in the world
     let mut app_exit_event_reader = ManualEventReader::<AppExit>::default();
@@ -190,7 +179,7 @@ pub fn winit_runner<T: Event>(mut app: App) {
 fn handle_winit_event<T: Event>(
     app: &mut App,
     app_exit_event_reader: &mut ManualEventReader<AppExit>,
-    runner_state: &mut WinitAppRunnerState<T>,
+    runner_state: &mut WinitAppRunnerState,
     create_window: &mut SystemState<CreateWindowParams<Added<Window>>>,
     event_writer_system_state: &mut SystemState<(
         EventWriter<WindowResized>,
@@ -229,7 +218,11 @@ fn handle_winit_event<T: Event>(
     let focused = windows.iter().any(|(_, window)| window.focused);
     let mut update_mode = config.update_mode(focused);
 
-    runner_state.handle_event(&event, update_mode);
+    runner_state.event_received |= app
+        .world
+        .get_non_send_resource::<WinitEventFilter<T>>()
+        .unwrap_or(&WinitEventFilter::<T>::default())
+        .handle(&event, update_mode);
 
     #[cfg(target_arch = "wasm32")]
     {
@@ -677,7 +670,7 @@ fn handle_winit_event<T: Event>(
     }
 }
 
-fn run_app_update<T: Event>(runner_state: &mut WinitAppRunnerState<T>, app: &mut App) {
+fn run_app_update(runner_state: &mut WinitAppRunnerState, app: &mut App) {
     runner_state.reset_on_update();
 
     if app.plugins_state() == PluginsState::Cleaned {
