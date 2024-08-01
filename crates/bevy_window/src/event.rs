@@ -315,6 +315,20 @@ pub struct WindowBackendScaleFactorChanged {
     pub scale_factor: f64,
 }
 
+/// Anevent that is sent whenever a window's GL context is lost.
+#[derive(Event, Debug, Clone, PartialEq, Reflect)]
+#[reflect(Debug, PartialEq)]
+#[cfg_attr(
+    feature = "serialize",
+    derive(serde::Serialize, serde::Deserialize),
+    reflect(Serialize, Deserialize)
+)]
+pub struct WindowGlContextLost {
+    /// Window that lose context.
+    pub window: Entity,
+}
+
+
 /// Events related to files being dragged and dropped on a window.
 #[derive(Event, Debug, Clone, PartialEq, Eq, Reflect)]
 #[reflect(Debug, PartialEq)]

@@ -124,6 +124,7 @@ impl App {
             sub_apps: SubApps {
                 main: SubApp::new(),
                 sub_apps: HashMap::new(),
+                update_sub_apps: true,
             },
             runner: Box::new(run_once),
         }
@@ -666,6 +667,16 @@ impl App {
     /// Extract data from the main world into the [`SubApp`] with the given label and perform an update if it exists.
     pub fn update_sub_app_by_label(&mut self, label: impl AppLabel) {
         self.sub_apps.update_subapp_by_label(label);
+    }
+
+    /// Resumes sub apps
+    pub fn resume_sub_apps(&mut self) {
+        self.sub_apps.update_sub_apps = true;
+    }
+
+    /// Pauses sub apps from running.
+    pub fn pause_sub_apps(&mut self) {
+        self.sub_apps.update_sub_apps = false;
     }
 
     /// Inserts a new `schedule` under the provided `label`, overwriting any existing

@@ -417,6 +417,7 @@ pub struct SubApps {
     pub main: SubApp,
     /// Other, labeled sub-apps.
     pub sub_apps: HashMap<InternedAppLabel, SubApp>,
+    pub update_sub_apps: bool,
 }
 
 impl SubApps {
@@ -430,11 +431,13 @@ impl SubApps {
             let _bevy_frame_update_span = info_span!("main app").entered();
             self.main.run_default_schedule();
         }
-        for (_label, sub_app) in self.sub_apps.iter_mut() {
-            #[cfg(feature = "trace")]
-            let _sub_app_span = info_span!("sub app", name = ?_label).entered();
-            sub_app.extract(&mut self.main.world);
-            sub_app.update();
+        if self.update_sub_apps {
+            for (_label, sub_app) in self.sub_apps.iter_mut() {
+                #[cfg(feature = "trace")]
+                let _sub_app_span = info_span!("sub app", name = ?_label).entered();
+                sub_app.extract(&mut self.main.world);
+                sub_app.update();
+            }
         }
 
         self.main.world.clear_trackers();

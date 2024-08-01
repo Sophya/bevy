@@ -12,12 +12,7 @@ use bevy_input::{
 use bevy_reflect::Reflect;
 #[cfg(feature = "serialize")]
 use bevy_reflect::{ReflectDeserialize, ReflectSerialize};
-use bevy_window::{
-    AppLifecycle, CursorEntered, CursorLeft, CursorMoved, FileDragAndDrop, Ime, ReceivedCharacter,
-    RequestRedraw, WindowBackendScaleFactorChanged, WindowCloseRequested, WindowCreated,
-    WindowDestroyed, WindowFocused, WindowMoved, WindowOccluded, WindowResized,
-    WindowScaleFactorChanged, WindowThemeChanged,
-};
+use bevy_window::{AppLifecycle, CursorEntered, CursorLeft, CursorMoved, FileDragAndDrop, Ime, ReceivedCharacter, RequestRedraw, WindowBackendScaleFactorChanged, WindowCloseRequested, WindowCreated, WindowDestroyed, WindowFocused, WindowGlContextLost, WindowMoved, WindowOccluded, WindowResized, WindowScaleFactorChanged, WindowThemeChanged};
 
 /// Wraps all `bevy_window` events in a common enum.
 ///
@@ -42,6 +37,7 @@ pub enum WinitEvent {
     ReceivedCharacter(ReceivedCharacter),
     RequestRedraw(RequestRedraw),
     WindowBackendScaleFactorChanged(WindowBackendScaleFactorChanged),
+    WindowGlContextLost(WindowGlContextLost),
     WindowCloseRequested(WindowCloseRequested),
     WindowCreated(WindowCreated),
     WindowDestroyed(WindowDestroyed),
@@ -110,6 +106,11 @@ impl From<RequestRedraw> for WinitEvent {
 impl From<WindowBackendScaleFactorChanged> for WinitEvent {
     fn from(e: WindowBackendScaleFactorChanged) -> Self {
         Self::WindowBackendScaleFactorChanged(e)
+    }
+}
+impl From<WindowGlContextLost> for WinitEvent {
+    fn from(e: WindowGlContextLost) -> Self {
+        Self::WindowGlContextLost(e)
     }
 }
 impl From<WindowCloseRequested> for WinitEvent {
