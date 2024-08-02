@@ -380,17 +380,6 @@ doc-scrape-examples = true
 [package.metadata.example.hello_world]
 hidden = true
 
-[[example]]
-name = "framerate"
-path = "examples/window/framerate.rs"
-doc-scrape-examples = true
-
-[package.metadata.example.framerate]
-name = "Framerate"
-description = "Demonstrates settings to limit framerate by using Winit settings"
-category = "Window"
-wasm = true
-
 # 2D Rendering
 [[example]]
 name = "bloom_2d"
