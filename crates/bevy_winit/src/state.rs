@@ -2,7 +2,7 @@ use approx::relative_eq;
 use bevy_app::{App, AppExit, PluginsState};
 use bevy_ecs::change_detection::{DetectChanges, NonSendMut, Res};
 use bevy_ecs::entity::Entity;
-use bevy_ecs::event::{EventWriter, ManualEventReader};
+use bevy_ecs::event::{Event as BevyEvent, EventWriter, ManualEventReader};
 use bevy_ecs::prelude::*;
 use bevy_ecs::system::SystemState;
 use bevy_ecs::world::FromWorld;
@@ -20,7 +20,7 @@ use std::marker::PhantomData;
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
 use winit::event;
-use winit::event::{DeviceEvent, DeviceId, StartCause, WindowEvent};
+use winit::event::{Event, DeviceEvent, DeviceId, StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::WindowId;
 
@@ -36,26 +36,20 @@ use bevy_window::{PrimaryWindow, RawHandleWrapper};
 
 use crate::accessibility::AccessKitAdapters;
 use crate::system::CachedWindow;
-use crate::{
-    converters, create_windows, AppSendEvent, CreateWindowParams, UpdateMode, WinitEvent,
-    WinitSettings, WinitWindows,
-};
+use crate::{converters, create_windows, AppSendEvent, CreateWindowParams, UpdateMode, WinitEvent, WinitSettings, WinitWindows, WinitEventFilter};
 
 /// Persistent state that is used to run the [`App`] according to the current
 /// [`UpdateMode`].
-struct WinitAppRunnerState<T: Event> {
+struct WinitAppRunnerState<T: BevyEvent + Clone> {
     /// The running app.
     app: App,
     /// Exit value once the loop is finished.
     app_exit: Option<AppExit>,
     /// Current update mode of the app.
     update_mode: UpdateMode,
-    /// Is `true` if a new [`WindowEvent`] event has been received since the last update.
-    window_event_received: bool,
-    /// Is `true` if a new [`DeviceEvent`] event has been received since the last update.
-    device_event_received: bool,
-    /// Is `true` if a new [`T`] event has been received since the last update.
-    user_event_received: bool,
+    /// Is `true` if a filtered event has been received since the last update.
+    event_received: bool,
+
     /// Is `true` if the app has requested a redraw since the last update.
     redraw_requested: bool,
     /// Is `true` if the app has already updated since the last redraw.
@@ -83,7 +77,7 @@ struct WinitAppRunnerState<T: Event> {
     )>,
 }
 
-impl<T: Event> WinitAppRunnerState<T> {
+impl<T: BevyEvent + Clone> WinitAppRunnerState<T> {
     fn new(mut app: App) -> Self {
         app.add_event::<T>();
 
@@ -102,9 +96,7 @@ impl<T: Event> WinitAppRunnerState<T> {
             previous_lifecycle: AppLifecycle::Idle,
             app_exit: None,
             update_mode: UpdateMode::Continuous,
-            window_event_received: false,
-            device_event_received: false,
-            user_event_received: false,
+            event_received: false,
             redraw_requested: false,
             ran_update_since_last_redraw: false,
             wait_elapsed: false,
@@ -117,9 +109,7 @@ impl<T: Event> WinitAppRunnerState<T> {
     }
 
     fn reset_on_update(&mut self) {
-        self.window_event_received = false;
-        self.device_event_received = false;
-        self.user_event_received = false;
+        self.event_received = false;
     }
 
     fn world(&self) -> &World {
@@ -131,7 +121,7 @@ impl<T: Event> WinitAppRunnerState<T> {
     }
 }
 
-impl<T: Event> ApplicationHandler<T> for WinitAppRunnerState<T> {
+impl<T: BevyEvent + Clone + Clone> ApplicationHandler<T> for WinitAppRunnerState<T> {
     fn new_events(&mut self, event_loop: &ActiveEventLoop, cause: StartCause) {
         if event_loop.exiting() {
             return;
@@ -171,7 +161,7 @@ impl<T: Event> ApplicationHandler<T> for WinitAppRunnerState<T> {
     }
 
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: T) {
-        self.user_event_received = true;
+        self.filter_received_event(&Event::UserEvent(event.clone()));
 
         self.world_mut().send_event(event);
         self.redraw_requested = true;
@@ -183,7 +173,7 @@ impl<T: Event> ApplicationHandler<T> for WinitAppRunnerState<T> {
         window_id: WindowId,
         event: WindowEvent,
     ) {
-        self.window_event_received = true;
+        self.filter_received_event(&Event::WindowEvent { window_id, event: event.clone() });
 
         let (
             mut window_resized,
@@ -389,10 +379,10 @@ impl<T: Event> ApplicationHandler<T> for WinitAppRunnerState<T> {
     fn device_event(
         &mut self,
         _event_loop: &ActiveEventLoop,
-        _device_id: DeviceId,
+        device_id: DeviceId,
         event: DeviceEvent,
     ) {
-        self.device_event_received = true;
+        self.filter_received_event(&Event::DeviceEvent { device_id, event: event.clone() });
 
         if let DeviceEvent::MouseMotion { delta: (x, y) } = event {
             let delta = Vec2::new(x as f32, y as f32);
@@ -423,7 +413,7 @@ impl<T: Event> ApplicationHandler<T> for WinitAppRunnerState<T> {
         let focused = windows.iter().any(|(_, window)| window.focused);
 
         let mut update_mode = config.update_mode(focused);
-        let mut should_update = self.should_update(update_mode);
+        let mut should_update = self.should_update();
 
         if self.startup_forced_updates > 0 {
             self.startup_forced_updates -= 1;
@@ -600,29 +590,14 @@ impl<T: Event> ApplicationHandler<T> for WinitAppRunnerState<T> {
     }
 }
 
-impl<T: Event> WinitAppRunnerState<T> {
-    fn should_update(&self, update_mode: UpdateMode) -> bool {
-        let handle_event = match update_mode {
-            UpdateMode::Continuous => {
-                self.wait_elapsed
-                    || self.user_event_received
-                    || self.window_event_received
-                    || self.device_event_received
-            }
-            UpdateMode::Reactive {
-                react_to_device_events,
-                react_to_user_events,
-                react_to_window_events,
-                ..
-            } => {
-                self.wait_elapsed
-                    || (react_to_device_events && self.device_event_received)
-                    || (react_to_user_events && self.user_event_received)
-                    || (react_to_window_events && self.window_event_received)
-            }
-        };
+impl<T: BevyEvent + Clone> WinitAppRunnerState<T> {
+    fn filter_received_event(&mut self, event: &Event<T>) {
+        let filter = self.world().non_send_resource::<WinitEventFilter<T>>();
+        self.event_received = filter.handle(&event, self.update_mode);
+    }
 
-        handle_event && self.lifecycle.is_active()
+    fn should_update(&self) -> bool {
+        (self.wait_elapsed || self.event_received) && self.lifecycle.is_active()
     }
 
     fn run_app_update(&mut self) {
@@ -788,7 +763,7 @@ impl<T: Event> WinitAppRunnerState<T> {
 ///
 /// Overriding the app's [runner](bevy_app::App::runner) while using `WinitPlugin` will bypass the
 /// `EventLoop`.
-pub fn winit_runner<T: Event>(mut app: App) -> AppExit {
+pub fn winit_runner<T: BevyEvent + Clone>(mut app: App) -> AppExit {
     if app.plugins_state() == PluginsState::Ready {
         app.finish();
         app.cleanup();

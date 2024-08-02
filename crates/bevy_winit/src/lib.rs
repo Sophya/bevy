@@ -27,6 +27,7 @@ pub use system::create_windows;
 use system::{changed_windows, despawn_windows};
 pub use winit_config::*;
 pub use winit_event::*;
+pub use winit_event_filter::*;
 pub use winit_windows::*;
 
 use crate::accessibility::{AccessKitAdapters, AccessKitPlugin, WinitActionRequestHandlers};
@@ -39,6 +40,7 @@ mod system;
 mod winit_config;
 pub mod winit_event;
 mod winit_windows;
+mod winit_event_filter;
 
 /// [`AndroidApp`] provides an interface to query the application state as well as monitor events
 /// (for example lifecycle and input events).
@@ -70,7 +72,7 @@ pub struct WinitPlugin<T: Event = WakeUp> {
     marker: PhantomData<T>,
 }
 
-impl<T: Event> Plugin for WinitPlugin<T> {
+impl<T: Event + Clone> Plugin for WinitPlugin<T> {
     fn name(&self) -> &str {
         "bevy_winit::WinitPlugin"
     }
@@ -112,6 +114,7 @@ impl<T: Event> Plugin for WinitPlugin<T> {
 
         app.init_non_send_resource::<WinitWindows>()
             .init_resource::<WinitSettings>()
+            .init_non_send_resource::<WinitEventFilter<T>>()
             .add_event::<WinitEvent>()
             .set_runner(winit_runner::<T>)
             .add_systems(
