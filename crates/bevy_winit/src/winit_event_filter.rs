@@ -22,8 +22,30 @@ impl<T: Event> WinitEventFilter<T> {
     }
 
     pub fn handle(&self, event: &WinitEvent<T>, update_mode: UpdateMode) -> bool {
-        self.filter
-            .as_ref()
-            .map_or(false, |f| f(event, update_mode))
+        let Some(filter) = &self.filter else {
+            return false;
+        };
+
+        let can_react = match update_mode {
+            UpdateMode::Continuous => true,
+            UpdateMode::Reactive {
+                react_to_device_events,
+                react_to_user_events,
+                react_to_window_events,
+                ..
+            } =>
+                match event {
+                    WinitEvent::DeviceEvent { .. } => react_to_device_events,
+                    WinitEvent::UserEvent(_) => react_to_user_events,
+                    WinitEvent::WindowEvent { .. } => react_to_window_events,
+                    _ => false,
+                }
+        };
+
+        if !can_react {
+            return false;
+        }
+
+        filter(event, update_mode)
     }
 }
