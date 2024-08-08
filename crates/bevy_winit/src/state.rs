@@ -499,16 +499,20 @@ impl<T: BevyEvent + Clone + Clone> ApplicationHandler<T> for WinitAppRunnerState
             let all_invisible = windows.iter().all(|w| !w.1.visible);
 
             // Not redrawing, but the timeout elapsed.
-            //
+
+            // TODO(@pietrosophya): this replaces the code below
+            self.run_app_update();
+
+            // TODO(@pietrosophya): commented out since this is not working with the filtering
             // Additional condition for Windows OS.
             // If no windows are visible, redraw calls will never succeed, which results in no app update calls being performed.
             // This is a temporary solution, full solution is mentioned here: https://github.com/bevyengine/bevy/issues/1343#issuecomment-770091684
-            if !self.ran_update_since_last_redraw || all_invisible {
-                self.run_app_update();
-                self.ran_update_since_last_redraw = true;
-            } else {
-                self.redraw_requested = true;
-            }
+            // if !self.ran_update_since_last_redraw || all_invisible {
+            //     self.run_app_update();
+            //     self.ran_update_since_last_redraw = true;
+            // } else {
+            //     self.redraw_requested = self.event_received;
+            // }
 
             // Running the app may have changed the WinitSettings resource, so we have to re-extract it.
             let (config, windows) = focused_windows_state.get(self.world());
@@ -601,7 +605,7 @@ impl<T: BevyEvent + Clone + Clone> ApplicationHandler<T> for WinitAppRunnerState
 impl<T: BevyEvent + Clone> WinitAppRunnerState<T> {
     fn filter_received_event(&mut self, event: &Event<T>) {
         let filter = self.world().non_send_resource::<WinitEventFilter<T>>();
-        self.event_received = filter.handle(&event, self.update_mode);
+        self.event_received |= filter.handle(&event, self.update_mode);
     }
 
     fn should_update(&self) -> bool {

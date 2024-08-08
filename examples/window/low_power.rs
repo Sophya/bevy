@@ -4,17 +4,40 @@
 //! running the event loop non-stop.
 
 use bevy::window::WindowResolution;
-use bevy::winit::WakeUp;
+use bevy::winit::{WakeUp, WinitEventFilter};
 use bevy::{
     prelude::*,
     utils::Duration,
     window::{PresentMode, WindowPlugin},
     winit::{EventLoopProxy, WinitSettings},
 };
+use winit::event::{Event as WinitEvent, WindowEvent};
 
 fn main() {
+    let winit_event_filter = WinitEventFilter::<WakeUp>::new(|e, _| {
+        // info!("Event: {e:?}");
+        match e {
+            WinitEvent::WindowEvent { event, .. } => {
+
+                matches!(
+                event,
+                WindowEvent::CursorEntered { .. }
+                    | WindowEvent::CursorLeft { .. }
+                    | WindowEvent::MouseInput { .. }
+                    | WindowEvent::CursorMoved { .. }
+                    // | WindowEvent::RedrawRequested { .. }
+                    | WindowEvent::Resized { .. }
+                    | WindowEvent::ScaleFactorChanged { .. }
+            )
+            },
+            WinitEvent::UserEvent(_) => true,
+            _ => false,
+        }
+    });
+
     App::new()
         // Continuous rendering for games - bevy's default.
+        .insert_non_send_resource(winit_event_filter)
         .insert_resource(WinitSettings::game())
         // Power-saving reactive rendering for applications.
         .insert_resource(WinitSettings::desktop_app())
