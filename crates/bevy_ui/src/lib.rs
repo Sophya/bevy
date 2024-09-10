@@ -26,7 +26,6 @@ mod geometry;
 mod layout;
 mod render;
 mod stack;
-mod texture_slice;
 mod ui_node;
 
 pub use focus::*;
@@ -54,6 +53,7 @@ use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use bevy_input::InputSystem;
 use bevy_render::{
+    camera::CameraUpdateSystem,
     view::{check_visibility, VisibilitySystems},
     RenderApp,
 };
@@ -76,8 +76,6 @@ pub enum UiSystem {
     Focus,
     /// After this label, the [`UiStack`] resource has been updated
     Stack,
-    /// After this label, node outline widths have been updated
-    Outlines,
 }
 
 /// The current scale of the UI.
@@ -129,6 +127,10 @@ impl Plugin for UiPlugin {
             .register_type::<widget::Label>()
             .register_type::<ZIndex>()
             .register_type::<Outline>()
+            .configure_sets(
+                PostUpdate,
+                (CameraUpdateSystem, UiSystem::Stack, UiSystem::Layout).chain(),
+            )
             .add_systems(
                 PreUpdate,
                 ui_focus_system.in_set(UiSystem::Focus).after(InputSystem),
@@ -145,17 +147,10 @@ impl Plugin for UiPlugin {
                 ui_layout_system
                     .in_set(UiSystem::Layout)
                     .before(TransformSystem::TransformPropagate),
-                resolve_outlines_system
-                    .in_set(UiSystem::Outlines)
-                    .after(UiSystem::Layout)
-                    // clipping doesn't care about outlines
-                    .ambiguous_with(update_clipping_system)
-                    .in_set(AmbiguousWithTextSystem),
                 ui_stack_system
                     .in_set(UiSystem::Stack)
                     // the systems don't care about stack index
                     .ambiguous_with(update_clipping_system)
-                    .ambiguous_with(resolve_outlines_system)
                     .ambiguous_with(ui_layout_system)
                     .in_set(AmbiguousWithTextSystem),
                 update_clipping_system.after(TransformSystem::TransformPropagate),
@@ -167,11 +162,6 @@ impl Plugin for UiPlugin {
                     .before(UiSystem::Layout)
                     .in_set(AmbiguousWithTextSystem)
                     .in_set(AmbiguousWithUpdateText2DLayout),
-                (
-                    texture_slice::compute_slices_on_asset_event,
-                    texture_slice::compute_slices_on_image_change,
-                )
-                    .after(UiSystem::Layout),
             ),
         );
 
@@ -204,11 +194,6 @@ fn build_text_interop(app: &mut App) {
         (
             widget::measure_text_system
                 .before(UiSystem::Layout)
-                // Potential conflict: `Assets<Image>`
-                // In practice, they run independently since `bevy_render::camera_update_system`
-                // will only ever observe its own render target, and `widget::measure_text_system`
-                // will never modify a pre-existing `Image` asset.
-                .ambiguous_with(bevy_render::camera::CameraUpdateSystem)
                 // Potential conflict: `Assets<Image>`
                 // Since both systems will only ever insert new [`Image`] assets,
                 // they will never observe each other's effects.
