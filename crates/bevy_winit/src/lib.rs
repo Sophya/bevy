@@ -34,6 +34,7 @@ pub use winit::{
     window::{CustomCursor as WinitCustomCursor, CustomCursorSource},
 };
 pub use winit_config::*;
+pub use winit_event_filter::*;
 pub use winit_windows::*;
 
 use crate::{
@@ -48,6 +49,7 @@ pub mod cursor;
 mod state;
 mod system;
 mod winit_config;
+mod winit_event_filter;
 mod winit_monitors;
 mod winit_windows;
 
@@ -78,7 +80,7 @@ pub struct WinitPlugin<T: Event = WakeUp> {
     marker: PhantomData<T>,
 }
 
-impl<T: Event> Plugin for WinitPlugin<T> {
+impl<T: Event + Clone> Plugin for WinitPlugin<T> {
     fn name(&self) -> &str {
         "bevy_winit::WinitPlugin"
     }
@@ -119,6 +121,7 @@ impl<T: Event> Plugin for WinitPlugin<T> {
         }
 
         app.init_non_send_resource::<WinitWindows>()
+            .init_non_send_resource::<WinitEventFilter<T>>()
             .init_resource::<WinitMonitors>()
             .init_resource::<WinitSettings>()
             .set_runner(winit_runner::<T>)
