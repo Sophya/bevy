@@ -5,7 +5,7 @@ use bevy_asset::AssetId;
 use bevy_ecs::{
     change_detection::{DetectChanges, NonSendMut, Res},
     entity::Entity,
-    event::{EventCursor, EventWriter},
+    event::{Event as BevyEvent, EventCursor, EventWriter},
     prelude::*,
     system::SystemState,
     world::FromWorld,
@@ -34,7 +34,7 @@ use winit::{
     application::ApplicationHandler,
     dpi::PhysicalSize,
     event,
-    event::{DeviceEvent, DeviceId, StartCause, WindowEvent},
+    event::{DeviceEvent, DeviceId, Event, StartCause, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     window::WindowId,
 };
@@ -53,28 +53,22 @@ use crate::{
     converters, create_windows,
     system::{create_monitors, CachedWindow, WinitWindowPressedKeys},
     AppSendEvent, CreateMonitorParams, CreateWindowParams, EventLoopProxyWrapper,
-    RawWinitWindowEvent, UpdateMode, WinitSettings, WinitWindows,
+    RawWinitWindowEvent, UpdateMode, WinitEventFilter, WinitSettings, WinitWindows,
 };
 
 /// Persistent state that is used to run the [`App`] according to the current
 /// [`UpdateMode`].
-struct WinitAppRunnerState<T: Event> {
+struct WinitAppRunnerState<T: BevyEvent + Clone> {
     /// The running app.
     app: App,
     /// Exit value once the loop is finished.
     app_exit: Option<AppExit>,
     /// Current update mode of the app.
     update_mode: UpdateMode,
-    /// Is `true` if a new [`WindowEvent`] event has been received since the last update.
-    window_event_received: bool,
-    /// Is `true` if a new [`DeviceEvent`] event has been received since the last update.
-    device_event_received: bool,
-    /// Is `true` if a new `T` event has been received since the last update.
-    user_event_received: bool,
+    /// Is `true` if a filtered event has been received since the last update.
+    event_received: bool,
     /// Is `true` if the app has requested a redraw since the last update.
     redraw_requested: bool,
-    /// Is `true` if the app has already updated since the last redraw.
-    ran_update_since_last_redraw: bool,
     /// Is `true` if enough time has elapsed since `last_update` to run another update.
     wait_elapsed: bool,
     /// Number of "forced" updates to trigger on application start
@@ -108,7 +102,7 @@ struct WinitAppRunnerState<T: Event> {
     )>,
 }
 
-impl<T: Event> WinitAppRunnerState<T> {
+impl<T: BevyEvent + Clone> WinitAppRunnerState<T> {
     fn new(mut app: App) -> Self {
         app.add_event::<T>();
         #[cfg(feature = "custom_cursor")]
@@ -129,11 +123,8 @@ impl<T: Event> WinitAppRunnerState<T> {
             previous_lifecycle: AppLifecycle::Idle,
             app_exit: None,
             update_mode: UpdateMode::Continuous,
-            window_event_received: false,
-            device_event_received: false,
-            user_event_received: false,
+            event_received: false,
             redraw_requested: false,
-            ran_update_since_last_redraw: false,
             wait_elapsed: false,
             // 3 seems to be enough, 5 is a safe margin
             startup_forced_updates: 5,
@@ -145,9 +136,7 @@ impl<T: Event> WinitAppRunnerState<T> {
     }
 
     fn reset_on_update(&mut self) {
-        self.window_event_received = false;
-        self.device_event_received = false;
-        self.user_event_received = false;
+        self.event_received = false;
     }
 
     fn world(&self) -> &World {
@@ -202,7 +191,7 @@ pub enum CursorSource {
 #[derive(Component, Debug)]
 pub struct PendingCursor(pub Option<CursorSource>);
 
-impl<T: Event> ApplicationHandler<T> for WinitAppRunnerState<T> {
+impl<T: BevyEvent + Clone> ApplicationHandler<T> for WinitAppRunnerState<T> {
     fn new_events(&mut self, event_loop: &ActiveEventLoop, cause: StartCause) {
         if event_loop.exiting() {
             return;
@@ -242,7 +231,7 @@ impl<T: Event> ApplicationHandler<T> for WinitAppRunnerState<T> {
     }
 
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: T) {
-        self.user_event_received = true;
+        self.filter_received_event(&Event::UserEvent(event.clone()));
 
         self.world_mut().send_event(event);
         self.redraw_requested = true;
@@ -254,7 +243,10 @@ impl<T: Event> ApplicationHandler<T> for WinitAppRunnerState<T> {
         window_id: WindowId,
         event: WindowEvent,
     ) {
-        self.window_event_received = true;
+        self.filter_received_event(&Event::WindowEvent {
+            window_id,
+            event: event.clone(),
+        });
 
         let (
             mut window_resized,
@@ -448,19 +440,6 @@ impl<T: Event> ApplicationHandler<T> for WinitAppRunnerState<T> {
             WindowEvent::Destroyed => {
                 self.bevy_window_events.send(WindowDestroyed { window });
             }
-            WindowEvent::RedrawRequested => {
-                self.ran_update_since_last_redraw = false;
-
-                // https://github.com/bevyengine/bevy/issues/17488
-                #[cfg(target_os = "windows")]
-                {
-                    // Have the startup behavior run in about_to_wait, which prevents issues with
-                    // invisible window creation. https://github.com/bevyengine/bevy/issues/18027
-                    if self.startup_forced_updates == 0 {
-                        self.redraw_requested(_event_loop);
-                    }
-                }
-            }
             _ => {}
         }
 
@@ -475,10 +454,13 @@ impl<T: Event> ApplicationHandler<T> for WinitAppRunnerState<T> {
     fn device_event(
         &mut self,
         _event_loop: &ActiveEventLoop,
-        _device_id: DeviceId,
+        device_id: DeviceId,
         event: DeviceEvent,
     ) {
-        self.device_event_received = true;
+        self.filter_received_event(&Event::DeviceEvent {
+            device_id,
+            event: event.clone(),
+        });
 
         if let DeviceEvent::MouseMotion { delta: (x, y) } = event {
             let delta = Vec2::new(x as f32, y as f32);
@@ -535,7 +517,7 @@ impl<T: Event> ApplicationHandler<T> for WinitAppRunnerState<T> {
     }
 }
 
-impl<T: Event> WinitAppRunnerState<T> {
+impl<T: BevyEvent + Clone> WinitAppRunnerState<T> {
     fn redraw_requested(&mut self, event_loop: &ActiveEventLoop) {
         let mut redraw_event_reader = EventCursor::<RequestRedraw>::default();
 
@@ -552,7 +534,7 @@ impl<T: Event> WinitAppRunnerState<T> {
         let focused = windows.iter().any(|(_, window)| window.focused);
 
         let mut update_mode = config.update_mode(focused);
-        let mut should_update = self.should_update(update_mode);
+        let mut should_update = self.should_update();
 
         if self.startup_forced_updates > 0 {
             self.startup_forced_updates -= 1;
@@ -564,7 +546,6 @@ impl<T: Event> WinitAppRunnerState<T> {
             self.lifecycle = AppLifecycle::Suspended;
             // Trigger one last update to enter the suspended state
             should_update = true;
-            self.ran_update_since_last_redraw = false;
 
             #[cfg(target_os = "android")]
             {
@@ -636,25 +617,7 @@ impl<T: Event> WinitAppRunnerState<T> {
         let begin_frame_time = Instant::now();
 
         if should_update {
-            let (_, windows) = focused_windows_state.get(self.world());
-            // If no windows exist, this will evaluate to `true`.
-            let all_invisible = windows.iter().all(|w| !w.1.visible);
-
-            // Not redrawing, but the timeout elapsed.
-            //
-            // Additional condition for Windows OS.
-            // If no windows are visible, redraw calls will never succeed, which results in no app update calls being performed.
-            // This is a temporary solution, full solution is mentioned here: https://github.com/bevyengine/bevy/issues/1343#issuecomment-770091684
-            if !self.ran_update_since_last_redraw || all_invisible {
-                self.run_app_update();
-                #[cfg(feature = "custom_cursor")]
-                self.update_cursors(event_loop);
-                #[cfg(not(feature = "custom_cursor"))]
-                self.update_cursors();
-                self.ran_update_since_last_redraw = true;
-            } else {
-                self.redraw_requested = true;
-            }
+            self.run_app_update();
 
             // Running the app may have changed the WinitSettings resource, so we have to re-extract it.
             let (config, windows) = focused_windows_state.get(self.world());
@@ -731,28 +694,13 @@ impl<T: Event> WinitAppRunnerState<T> {
         }
     }
 
-    fn should_update(&self, update_mode: UpdateMode) -> bool {
-        let handle_event = match update_mode {
-            UpdateMode::Continuous => {
-                self.wait_elapsed
-                    || self.user_event_received
-                    || self.window_event_received
-                    || self.device_event_received
-            }
-            UpdateMode::Reactive {
-                react_to_device_events,
-                react_to_user_events,
-                react_to_window_events,
-                ..
-            } => {
-                self.wait_elapsed
-                    || (react_to_device_events && self.device_event_received)
-                    || (react_to_user_events && self.user_event_received)
-                    || (react_to_window_events && self.window_event_received)
-            }
-        };
+    fn filter_received_event(&mut self, event: &Event<T>) {
+        let filter = self.world().non_send_resource::<WinitEventFilter<T>>();
+        self.event_received |= filter.handle(&event, self.update_mode);
+    }
 
-        handle_event && self.lifecycle.is_active()
+    fn should_update(&self) -> bool {
+        (self.wait_elapsed || self.event_received) && self.lifecycle.is_active()
     }
 
     fn run_app_update(&mut self) {
@@ -780,8 +728,10 @@ impl<T: Event> WinitAppRunnerState<T> {
                 get_gl_context(window).map_or(false, |ctx| !ctx.is_context_lost())
             }
 
-            let mut windows_state: SystemState<(NonSend<WinitWindows>, Query<Entity, With<Window>>)> =
-                SystemState::new(self.world_mut());
+            let mut windows_state: SystemState<(
+                NonSend<WinitWindows>,
+                Query<Entity, With<Window>>,
+            )> = SystemState::new(self.world_mut());
 
             let (winit_windows, windows) = windows_state.get(self.world_mut());
 
@@ -789,7 +739,8 @@ impl<T: Event> WinitAppRunnerState<T> {
                 let window = winit_windows.get_window(entity).expect("Window must exist");
 
                 if !has_gl_context(&window) {
-                    self.winit_events.send(WindowGlContextLost { window: entity });
+                    self.winit_events
+                        .send(WindowGlContextLost { window: entity });
 
                     // Pauses sub-apps to stop WGPU from crashing when there's no OpenGL context.
                     // Ensures that the rest of the systems in the main app keep running (i.e. physics).
@@ -966,7 +917,7 @@ impl<T: Event> WinitAppRunnerState<T> {
 ///
 /// Overriding the app's [runner](bevy_app::App::runner) while using `WinitPlugin` will bypass the
 /// `EventLoop`.
-pub fn winit_runner<T: Event>(mut app: App, event_loop: EventLoop<T>) -> AppExit {
+pub fn winit_runner<T: BevyEvent + Clone>(mut app: App, event_loop: EventLoop<T>) -> AppExit {
     if app.plugins_state() == PluginsState::Ready {
         app.finish();
         app.cleanup();
