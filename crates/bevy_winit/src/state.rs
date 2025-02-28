@@ -434,6 +434,27 @@ impl<T: BevyEvent + Clone> ApplicationHandler<T> for WinitAppRunnerState<T> {
         create_windows(event_loop, create_window.get_mut(self.world_mut()));
         create_window.apply(self.world_mut());
 
+        // TODO: This is a workaround for https://github.com/bevyengine/bevy/issues/17488
+        //       while preserving the iOS fix in https://github.com/bevyengine/bevy/pull/11245
+        //       The monitor sync logic likely belongs in monitor event handlers and not here.
+        #[cfg(not(target_os = "windows"))]
+        self.redraw_requested(event_loop);
+    }
+
+    fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
+        // Mark the state as `WillSuspend`. This will let the schedule run one last time
+        // before actually suspending to let the application react
+        self.lifecycle = AppLifecycle::WillSuspend;
+    }
+
+    fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
+        let world = self.world_mut();
+        world.clear_all();
+    }
+}
+
+impl<T: Event> WinitAppRunnerState<T> {
+    fn redraw_requested(&mut self, event_loop: &ActiveEventLoop) {
         let mut redraw_event_reader = EventCursor::<RequestRedraw>::default();
 
         let mut focused_windows_state: SystemState<(Res<WinitSettings>, Query<(Entity, &Window)>)> =
@@ -609,16 +630,6 @@ impl<T: BevyEvent + Clone> ApplicationHandler<T> for WinitAppRunnerState<T> {
         }
     }
 
-    fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
-        // Mark the state as `WillSuspend`. This will let the schedule run one last time
-        // before actually suspending to let the application react
-        self.lifecycle = AppLifecycle::WillSuspend;
-    }
-
-    fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
-        let world = self.world_mut();
-        world.clear_all();
-    }
 }
 
 impl<T: BevyEvent + Clone> WinitAppRunnerState<T> {
@@ -626,6 +637,7 @@ impl<T: BevyEvent + Clone> WinitAppRunnerState<T> {
         let filter = self.world().non_send_resource::<WinitEventFilter<T>>();
         self.event_received |= filter.handle(&event, self.update_mode);
     }
+
 
     fn should_update(&self) -> bool {
         (self.wait_elapsed || self.event_received) && self.lifecycle.is_active()
