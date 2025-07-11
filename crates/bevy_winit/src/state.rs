@@ -63,6 +63,8 @@ struct WinitAppRunnerState<T: BevyEvent + Clone> {
     event_received: bool,
     /// Is `true` if the app has requested a redraw since the last update.
     redraw_requested: bool,
+    /// Is `true` if the app has already updated since the last redraw.
+    ran_update_since_last_redraw: bool,
     /// Is `true` if enough time has elapsed since `last_update` to run another update.
     wait_elapsed: bool,
     /// Number of "forced" updates to trigger on application start
@@ -108,6 +110,7 @@ impl<T: BevyEvent + Clone> WinitAppRunnerState<T> {
             update_mode: UpdateMode::Continuous,
             event_received: false,
             redraw_requested: false,
+            ran_update_since_last_redraw: false,
             wait_elapsed: false,
             // 3 seems to be enough, 5 is a safe margin
             startup_forced_updates: 5,
@@ -398,6 +401,16 @@ impl<T: BevyEvent + Clone> ApplicationHandler<T> for WinitAppRunnerState<T> {
             WindowEvent::Destroyed => {
                 self.bevy_window_events.send(WindowDestroyed { window });
             }
+            WindowEvent::RedrawRequested => {
+                self.ran_update_since_last_redraw = false;
+
+                // https://github.com/bevyengine/bevy/issues/17488
+                #[cfg(target_os = "windows")]
+                {
+                    self.redraw_requested = true;
+                    self.redraw_requested(_event_loop);
+                }
+            }
             _ => {}
         }
 
@@ -482,6 +495,7 @@ impl<T: BevyEvent + Clone> WinitAppRunnerState<T> {
             self.lifecycle = AppLifecycle::Suspended;
             // Trigger one last update to enter the suspended state
             should_update = true;
+            self.ran_update_since_last_redraw = false;
 
             #[cfg(target_os = "android")]
             {
@@ -553,7 +567,25 @@ impl<T: BevyEvent + Clone> WinitAppRunnerState<T> {
         let begin_frame_time = Instant::now();
 
         if should_update {
-            self.run_app_update();
+            let (_, windows) = focused_windows_state.get(self.world());
+            // If no windows exist, this will evaluate to `true`.
+            let all_invisible = windows.iter().all(|w| !w.1.visible);
+
+            // Not redrawing, but the timeout elapsed.
+            //
+            // Additional condition for Windows OS.
+            // If no windows are visible, redraw calls will never succeed, which results in no app update calls being performed.
+            // This is a temporary solution, full solution is mentioned here: https://github.com/bevyengine/bevy/issues/1343#issuecomment-770091684
+            if !self.ran_update_since_last_redraw || all_invisible {
+                self.run_app_update();
+                #[cfg(feature = "custom_cursor")]
+                self.update_cursors(event_loop);
+                #[cfg(not(feature = "custom_cursor"))]
+                self.update_cursors();
+                self.ran_update_since_last_redraw = true;
+            } else {
+                self.redraw_requested = true;
+            }
 
             // Running the app may have changed the WinitSettings resource, so we have to re-extract it.
             let (config, windows) = focused_windows_state.get(self.world());
