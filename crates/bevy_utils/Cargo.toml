@@ -21,7 +21,7 @@ alloc = ["hashbrown/default"]
 serde = ["hashbrown/serde"]
 
 [dependencies]
-ahash = { version = "0.8.7", default-features = false, features = [
+ahash = { version = "=0.8.11", default-features = false, features = [
   "compile-time-rng",
 ] }
 tracing = { version = "0.1", default-features = false }
