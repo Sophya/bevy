@@ -608,6 +608,11 @@ impl From<WindowFocused> for WindowEvent {
         Self::WindowFocused(e)
     }
 }
+impl From<WindowGlContextLost> for WindowEvent {
+    fn from(e: WindowGlContextLost) -> Self {
+        Self::WindowGlContextLost(e)
+    }
+}
 impl From<WindowMoved> for WindowEvent {
     fn from(e: WindowMoved) -> Self {
         Self::WindowMoved(e)
